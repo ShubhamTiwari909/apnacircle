@@ -1,0 +1,22 @@
+# Dependencies & build outputs
+node_modules/
+dist/
+.astro/
+.wrangler/
+.turbo/
+coverage/
+playwright-report/
+test-results/
+
+# Environment & secrets (NEVER commit .env files)
+.env
+.env.*
+!.env.example
+
+# Generated policy outputs
+apnacircle-policies/filled/
+
+# OS & editor
+.DS_Store
+*.log
+*.tsbuildinfo
