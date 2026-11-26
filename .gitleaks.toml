@@ -1,0 +1,16 @@
+title = "ApnaCircle Gitleaks Configuration"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Allow documented Cloudflare Turnstile public/test dummy keys in .env.example and tests"
+regexes = [
+  '''1x00000000000000000000AA''',
+  '''1x0000000000000000000000000000000AA''',
+  '''2x00000000000000000000AB'''
+]
+paths = [
+  '''^\.env\.example$''',
+  '''^apnacircle-v1-planning\.(md|html)$'''
+]

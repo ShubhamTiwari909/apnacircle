@@ -1,0 +1,25 @@
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      astro-and-cloudflare:
+        patterns:
+          - "astro"
+          - "@astrojs/*"
+          - "wrangler"
+      testing-and-linting:
+        patterns:
+          - "eslint*"
+          - "prettier*"
+          - "vitest*"
+          - "@typescript-eslint/*"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
