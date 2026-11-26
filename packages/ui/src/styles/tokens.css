@@ -1,0 +1,66 @@
+/* ApnaCircle Design Tokens — Tailwind CSS v4 compatible */
+:root {
+  --ac-bg: #faf8f4;
+  --ac-surface: #ffffff;
+  --ac-surface-muted: #f3efe6;
+  --ac-ink: #152033;
+  --ac-ink-muted: #4b5669;
+  --ac-border: #dfd8ca;
+  --ac-border-strong: #c9c0ae;
+
+  /* Primary confident accent (deep teal) — WCAG AA with #ffffff (> 5.6:1) */
+  --ac-accent: #0f6466;
+  --ac-accent-hover: #0b4f51;
+  --ac-accent-soft: #e6f2f2;
+
+  /* Warm secondary accent (terracotta) */
+  --ac-warm: #b84d27;
+  --ac-warm-soft: #fbeee8;
+
+  /* Semantic statuses */
+  --ac-success: #166534;
+  --ac-success-soft: #dcfce7;
+  --ac-warning: #92400e;
+  --ac-warning-soft: #fef3c7;
+  --ac-danger: #991b1b;
+  --ac-danger-soft: #fee2e2;
+
+  /* Radii & elevation */
+  --ac-radius-card: 16px;
+  --ac-radius-control: 12px;
+  --ac-radius-pill: 9999px;
+  --ac-shadow-card: 0 1px 2px rgba(21, 32, 51, 0.05), 0 6px 18px rgba(21, 32, 51, 0.04);
+}
+
+html {
+  background-color: var(--ac-bg);
+  color: var(--ac-ink);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  background-color: var(--ac-bg);
+  color: var(--ac-ink);
+  margin: 0;
+  min-height: 100vh;
+}
+
+/* Visible keyboard focus across all interactive controls */
+:focus-visible {
+  outline: 2px solid var(--ac-accent);
+  outline-offset: 2px;
+}
+
+/* Respect reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
