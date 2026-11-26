@@ -1,0 +1,70 @@
+---
+import { getCollection, render } from 'astro:content';
+import BaseLayout from '../../../layouts/BaseLayout.astro';
+import { t } from '@apnacircle/i18n';
+import { getCityBySlug } from '@apnacircle/types';
+
+export async function getStaticPaths() {
+  const articles = await getCollection('articles', ({ data }) => data.status === 'published');
+  return articles.map((article) => ({
+    params: { city: article.data.citySlug, slug: article.id },
+    props: { article },
+  }));
+}
+
+const { article } = Astro.props;
+const cityMeta = getCityBySlug(article.data.citySlug);
+const { Content } = await render(article);
+---
+
+<BaseLayout
+  title={article.data.title}
+  description={article.data.description}
+  activeCitySlug={article.data.citySlug}
+>
+  <nav aria-label="Breadcrumb" class="mb-4 text-xs text-[var(--ac-ink-muted)]">
+    <a href="/cities" class="hover:text-[var(--ac-accent)]">{t('city.breadcrumbCities')}</a>
+    <span aria-hidden="true" class="mx-1.5">/</span>
+    <a href={`/${article.data.citySlug}`} class="hover:text-[var(--ac-accent)]">
+      {cityMeta?.name ?? article.data.citySlug}
+    </a>
+    <span aria-hidden="true" class="mx-1.5">/</span>
+    <span class="font-medium text-[var(--ac-ink)]">{article.data.title}</span>
+  </nav>
+
+  <article class="mx-auto max-w-3xl rounded-3xl border border-[var(--ac-border)] bg-[var(--ac-surface)] p-6 shadow-[var(--ac-shadow-card)] sm:p-10">
+    <header class="border-b border-[var(--ac-border)] pb-6">
+      <h1 class="text-2xl font-bold tracking-tight text-[var(--ac-ink)] sm:text-4xl">
+        {article.data.title}
+      </h1>
+      <p class="mt-3 text-base text-[var(--ac-ink-muted)]">{article.data.description}</p>
+      <div class="mt-4 flex flex-wrap gap-3 text-xs text-[var(--ac-ink-muted)]">
+        <span>{t('article.byline', { reviewer: article.data.reviewedBy })}</span>
+        <span aria-hidden="true">&middot;</span>
+        <span>{t('article.verifiedOn', { date: article.data.lastVerifiedAt })}</span>
+      </div>
+    </header>
+
+    <div class="article-body mt-6 space-y-4 text-sm leading-relaxed text-[var(--ac-ink-muted)] sm:text-base">
+      <Content />
+    </div>
+
+    <aside class="mt-8 rounded-2xl border border-[var(--ac-border)] bg-[var(--ac-bg)] p-4 text-xs text-[var(--ac-ink-muted)]">
+      <p class="font-semibold text-[var(--ac-ink)]">{t('article.firstHandLabel')}</p>
+      <p class="mt-1">{article.data.firstHandNote}</p>
+    </aside>
+  </article>
+</BaseLayout>
+
+<style>
+  .article-body :global(h2) {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--ac-ink);
+    margin-top: 1.75rem;
+  }
+  .article-body :global(ul) {
+    list-style-type: disc;
+    padding-left: 1.25rem;
+  }
+</style>

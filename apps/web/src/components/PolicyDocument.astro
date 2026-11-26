@@ -1,0 +1,131 @@
+---
+import { getEntry, render } from 'astro:content';
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { t } from '@apnacircle/i18n';
+import placeholders from '../../../../apnacircle-policies/placeholders.json';
+
+export interface Props {
+  policyId: string;
+  pageTitle: string;
+  description: string;
+}
+
+const { policyId, pageTitle, description } = Astro.props;
+
+const entry = await getEntry('policies', policyId);
+if (!entry) {
+  throw new Error(`Policy entry "${policyId}" not found in apnacircle-policies/`);
+}
+
+const { Content } = await render(entry);
+
+const hasUnfilledPlaceholders =
+  !placeholders.legal_entity ||
+  !placeholders.registered_address ||
+  !placeholders.domain ||
+  !placeholders.grievance_officer_name;
+
+const versionLabel = placeholders.version || '1.0';
+const effectiveDateLabel = placeholders.effective_date || 'Pending counsel sign-off';
+---
+
+<BaseLayout title={pageTitle} description={description}>
+  <div class="mx-auto max-w-3xl">
+    {
+      hasUnfilledPlaceholders ? (
+        <aside
+          role="note"
+          class="mb-6 rounded-2xl border border-[var(--ac-warning)]/30 bg-[var(--ac-warning-soft)] p-5 text-sm text-[var(--ac-warning)]"
+        >
+          <p class="font-semibold">{t('policy.draftBannerTitle')}</p>
+          <p class="mt-1">{t('policy.draftBannerBody')}</p>
+        </aside>
+      ) : null
+    }
+
+    <div class="mb-6 flex flex-wrap gap-3 text-xs text-[var(--ac-ink-muted)]">
+      <span class="rounded-full border border-[var(--ac-border)] bg-[var(--ac-surface)] px-3 py-1">
+        {t('policy.versionLabel')}: {versionLabel}
+      </span>
+      <span class="rounded-full border border-[var(--ac-border)] bg-[var(--ac-surface)] px-3 py-1">
+        {t('policy.effectiveLabel')}: {effectiveDateLabel}
+      </span>
+    </div>
+
+    <article
+      class="policy-prose rounded-3xl border border-[var(--ac-border)] bg-[var(--ac-surface)] p-6 shadow-[var(--ac-shadow-card)] sm:p-10"
+    >
+      <Content />
+    </article>
+  </div>
+</BaseLayout>
+
+<style>
+  .policy-prose :global(h1) {
+    font-size: 1.875rem;
+    line-height: 1.25;
+    font-weight: 700;
+    color: var(--ac-ink);
+    margin-bottom: 1rem;
+  }
+  .policy-prose :global(h2) {
+    font-size: 1.25rem;
+    line-height: 1.35;
+    font-weight: 700;
+    color: var(--ac-ink);
+    margin-top: 2rem;
+    margin-bottom: 0.75rem;
+  }
+  .policy-prose :global(h3) {
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: var(--ac-ink);
+    margin-top: 1.25rem;
+    margin-bottom: 0.5rem;
+  }
+  .policy-prose :global(p),
+  .policy-prose :global(li) {
+    color: var(--ac-ink-muted);
+    font-size: 0.95rem;
+    line-height: 1.7;
+  }
+  .policy-prose :global(p) {
+    margin-top: 0.75rem;
+  }
+  .policy-prose :global(ul),
+  .policy-prose :global(ol) {
+    margin-top: 0.75rem;
+    padding-left: 1.25rem;
+    list-style-type: disc;
+  }
+  .policy-prose :global(blockquote) {
+    margin-top: 1rem;
+    border-left: 3px solid var(--ac-accent);
+    background-color: var(--ac-bg);
+    padding: 0.75rem 1rem;
+    border-radius: 0.5rem;
+  }
+  .policy-prose :global(table) {
+    width: 100%;
+    margin-top: 1rem;
+    border-collapse: collapse;
+    display: block;
+    overflow-x: auto;
+    font-size: 0.875rem;
+  }
+  .policy-prose :global(th),
+  .policy-prose :global(td) {
+    border: 1px solid var(--ac-border);
+    padding: 0.625rem 0.75rem;
+    text-align: left;
+    vertical-align: top;
+  }
+  .policy-prose :global(th) {
+    background-color: var(--ac-surface-muted);
+    color: var(--ac-ink);
+    font-weight: 600;
+  }
+  .policy-prose :global(strong) {
+    color: var(--ac-ink);
+  }
+</style>

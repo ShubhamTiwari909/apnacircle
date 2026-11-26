@@ -1,7 +1,13 @@
 ---
+import { getCollection } from 'astro:content';
 import BaseLayout from '../layouts/BaseLayout.astro';
 import { t } from '@apnacircle/i18n';
-import { CATEGORIES } from '@apnacircle/types';
+import { CATEGORIES, getCategoryBySlug } from '@apnacircle/types';
+import { PlaceCard } from '@apnacircle/ui';
+
+const featuredPlaces = (
+  await getCollection('places', ({ data }) => data.status === 'published')
+).slice(0, 4);
 ---
 
 <BaseLayout title={t('brand.name')} description={t('brand.description')}>
@@ -60,6 +66,38 @@ import { CATEGORIES } from '@apnacircle/types';
           {t('home.pillarSafetyBody')}
         </p>
       </article>
+    </div>
+  </section>
+
+  <section class="mt-12" aria-labelledby="featured-places-heading">
+    <div class="flex flex-wrap items-end justify-between gap-4">
+      <h2 id="featured-places-heading" class="text-2xl font-bold text-[var(--ac-ink)]">
+        {t('home.featuredPlacesTitle')}
+      </h2>
+      <a
+        href="/saharanpur/places"
+        class="text-sm font-semibold text-[var(--ac-accent)] underline-offset-4 hover:underline"
+      >
+        {t('city.explorePlaces')}
+      </a>
+    </div>
+    <div class="mt-6 grid gap-5 sm:grid-cols-2">
+      {
+        featuredPlaces.map((place) => {
+          const cat = getCategoryBySlug(place.data.categorySlug);
+          return (
+            <PlaceCard
+              name={place.data.name}
+              locality={place.data.locality}
+              categoryLabel={cat?.name ?? place.data.categorySlug}
+              summary={place.data.summary}
+              publicAccessNote={place.data.publicAccessNote}
+              lastVerifiedAt={t('article.verifiedOn', { date: place.data.lastVerifiedAt })}
+              href={`/${place.data.citySlug}/${place.data.categorySlug}`}
+            />
+          );
+        })
+      }
     </div>
   </section>
 

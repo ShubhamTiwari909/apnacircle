@@ -10,10 +10,17 @@ import {
   Skeleton,
 } from './primitives.js';
 
+export interface EmptyStateActionLink {
+  href: string;
+  label: string;
+  variant?: 'primary' | 'secondary';
+}
+
 export interface EmptyStateCardProps {
   title: string;
   description: string;
   action?: ReactNode;
+  actions?: readonly EmptyStateActionLink[];
   className?: string;
 }
 
@@ -21,6 +28,7 @@ export function EmptyStateCard({
   title,
   description,
   action,
+  actions,
   className = '',
 }: EmptyStateCardProps) {
   return (
@@ -34,6 +42,23 @@ export function EmptyStateCard({
         {description}
       </EmptyStateDescription>
       {action ? <EmptyStateAction className="mt-5">{action}</EmptyStateAction> : null}
+      {actions && actions.length > 0 ? (
+        <EmptyStateAction className="mt-5 flex flex-wrap justify-center gap-3">
+          {actions.map((item) => (
+            <a
+              key={item.href}
+              href={item.href}
+              className={
+                item.variant === 'primary'
+                  ? 'inline-flex min-h-10 items-center rounded-xl bg-[var(--ac-accent)] px-4 py-2 text-sm font-semibold text-white hover:bg-[var(--ac-accent-hover)]'
+                  : 'inline-flex min-h-10 items-center rounded-xl border border-[var(--ac-border-strong)] px-4 py-2 text-sm font-semibold text-[var(--ac-ink)] hover:bg-[var(--ac-surface-muted)]'
+              }
+            >
+              {item.label}
+            </a>
+          ))}
+        </EmptyStateAction>
+      ) : null}
     </EmptyState>
   );
 }

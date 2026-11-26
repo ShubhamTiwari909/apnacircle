@@ -1,0 +1,202 @@
+---
+import { getCollection, render } from 'astro:content';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import { t } from '@apnacircle/i18n';
+import { ACTIVE_CITIES, CATEGORIES, getCategoryBySlug } from '@apnacircle/types';
+import { ArticleCard, EmptyStateCard, PlaceCard } from '@apnacircle/ui';
+
+export async function getStaticPaths() {
+  const cities = await getCollection('cities', ({ data }) => data.status === 'published');
+  return ACTIVE_CITIES.map((cityMeta) => {
+    const cityEntry = cities.find((entry) => entry.data.slug === cityMeta.slug);
+    if (!cityEntry) {
+      throw new Error(`Missing published city content entry for active city "${cityMeta.slug}"`);
+    }
+    return {
+      params: { city: cityMeta.slug },
+      props: { cityMeta, cityEntry },
+    };
+  });
+}
+
+const { cityMeta, cityEntry } = Astro.props;
+const { Content } = await render(cityEntry);
+
+const places = await getCollection(
+  'places',
+  ({ data }) => data.status === 'published' && data.citySlug === cityMeta.slug,
+);
+const articles = await getCollection(
+  'articles',
+  ({ data }) => data.status === 'published' && data.citySlug === cityMeta.slug,
+);
+const faqs = (
+  await getCollection(
+    'faqs',
+    ({ data }) => data.status === 'published' && data.citySlug === cityMeta.slug,
+  )
+).sort((a, b) => a.data.sortOrder - b.data.sortOrder);
+---
+
+<BaseLayout
+  title={cityEntry.data.title}
+  description={cityEntry.data.summary}
+  activeCitySlug={cityMeta.slug}
+>
+  <nav aria-label="Breadcrumb" class="mb-4 text-xs text-[var(--ac-ink-muted)]">
+    <a href="/cities" class="hover:text-[var(--ac-accent)]">{t('city.breadcrumbCities')}</a>
+    <span aria-hidden="true" class="mx-1.5">/</span>
+    <span class="font-medium text-[var(--ac-ink)]">{cityMeta.name}</span>
+  </nav>
+
+  <section class="rounded-3xl border border-[var(--ac-border)] bg-[var(--ac-surface)] p-6 shadow-[var(--ac-shadow-card)] sm:p-10">
+    <h1 class="text-3xl font-bold tracking-tight text-[var(--ac-ink)] sm:text-4xl">
+      {cityEntry.data.title}
+    </h1>
+    <p class="mt-3 max-w-2xl text-base text-[var(--ac-ink-muted)]">
+      {cityEntry.data.heroTagline}
+    </p>
+    <div class="mt-4 max-w-3xl text-sm leading-relaxed text-[var(--ac-ink-muted)]">
+      <Content />
+    </div>
+
+    <ul class="mt-6 grid gap-2.5 sm:grid-cols-3">
+      {
+        cityEntry.data.localHighlights.map((item) => (
+          <li class="rounded-xl border border-[var(--ac-border)] bg-[var(--ac-bg)] px-4 py-3 text-xs leading-relaxed text-[var(--ac-ink)]">
+            {item}
+          </li>
+        ))
+      }
+    </ul>
+
+    <div class="mt-6 flex flex-wrap gap-3">
+      <a
+        href={`/${cityMeta.slug}/places`}
+        class="inline-flex min-h-10 items-center rounded-xl bg-[var(--ac-accent)] px-4 py-2 text-sm font-semibold text-white hover:bg-[var(--ac-accent-hover)]"
+      >
+        {t('city.explorePlaces')}
+      </a>
+      <a
+        href={`/${cityMeta.slug}/meetups`}
+        class="inline-flex min-h-10 items-center rounded-xl border border-[var(--ac-border-strong)] px-4 py-2 text-sm font-semibold text-[var(--ac-ink)] hover:bg-[var(--ac-surface-muted)]"
+      >
+        {t('city.viewMeetups')}
+      </a>
+    </div>
+  </section>
+
+  <section class="mt-12" aria-labelledby="city-categories">
+    <h2 id="city-categories" class="text-2xl font-bold text-[var(--ac-ink)]">
+      {t('city.categoriesHeading', { city: cityMeta.name })}
+    </h2>
+    <ul class="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      {
+        CATEGORIES.map((category) => (
+          <li>
+            <a
+              href={`/${cityMeta.slug}/${category.slug}`}
+              class="flex items-center justify-between rounded-2xl border border-[var(--ac-border)] bg-[var(--ac-surface)] px-4 py-3.5 text-sm font-medium text-[var(--ac-ink)] hover:border-[var(--ac-accent)] hover:text-[var(--ac-accent)]"
+            >
+              <span>{category.name}</span>
+              <span aria-hidden="true" class="text-xs text-[var(--ac-ink-muted)]">
+                &rarr;
+              </span>
+            </a>
+          </li>
+        ))
+      }
+    </ul>
+  </section>
+
+  <section class="mt-12" aria-labelledby="city-places">
+    <div class="flex items-center justify-between gap-4">
+      <h2 id="city-places" class="text-2xl font-bold text-[var(--ac-ink)]">
+        {t('city.placesHeading')}
+      </h2>
+      <a
+        href={`/${cityMeta.slug}/places`}
+        class="text-sm font-semibold text-[var(--ac-accent)] hover:underline"
+      >
+        {t('city.explorePlaces')}
+      </a>
+    </div>
+    <div class="mt-4 grid gap-5 sm:grid-cols-2">
+      {
+        places.map((place) => {
+          const cat = getCategoryBySlug(place.data.categorySlug);
+          return (
+            <PlaceCard
+              name={place.data.name}
+              locality={place.data.locality}
+              categoryLabel={cat?.name ?? place.data.categorySlug}
+              summary={place.data.summary}
+              publicAccessNote={place.data.publicAccessNote}
+              lastVerifiedAt={t('article.verifiedOn', { date: place.data.lastVerifiedAt })}
+              href={`/${cityMeta.slug}/${place.data.categorySlug}`}
+            />
+          );
+        })
+      }
+    </div>
+  </section>
+
+  <section class="mt-12" aria-labelledby="city-meetups">
+    <h2 id="city-meetups" class="text-2xl font-bold text-[var(--ac-ink)]">
+      {t('city.meetupsHeading')}
+    </h2>
+    <div class="mt-4">
+      <EmptyStateCard
+        title={t('meetups.emptyTitle')}
+        description={t('meetups.emptyBody')}
+        actions={[
+          { href: '/host-guidelines', label: t('meetups.safetyLink'), variant: 'secondary' },
+        ]}
+      />
+    </div>
+  </section>
+
+  <section class="mt-12" aria-labelledby="city-guides">
+    <h2 id="city-guides" class="text-2xl font-bold text-[var(--ac-ink)]">
+      {t('city.guidesHeading')}
+    </h2>
+    <div class="mt-4 grid gap-5 sm:grid-cols-2">
+      {
+        articles.map((article) => (
+          <ArticleCard
+            title={article.data.title}
+            description={article.data.description}
+            href={`/${cityMeta.slug}/blog/${article.id}`}
+            reviewedBy={t('article.byline', { reviewer: article.data.reviewedBy })}
+            lastVerifiedAt={t('article.verifiedOn', { date: article.data.lastVerifiedAt })}
+          />
+        ))
+      }
+    </div>
+  </section>
+
+  <section class="mt-12" aria-labelledby="city-faqs">
+    <h2 id="city-faqs" class="text-2xl font-bold text-[var(--ac-ink)]">
+      {t('city.faqsHeading')}
+    </h2>
+    <dl class="mt-4 space-y-4">
+      {
+        faqs.map((faq) => (
+          <div class="rounded-2xl border border-[var(--ac-border)] bg-[var(--ac-surface)] p-5 shadow-[var(--ac-shadow-card)]">
+            <dt class="text-base font-semibold text-[var(--ac-ink)]">{faq.data.question}</dt>
+            <dd class="mt-2 text-sm leading-relaxed text-[var(--ac-ink-muted)]">
+              {faq.data.answer}
+            </dd>
+          </div>
+        ))
+      }
+    </dl>
+  </section>
+
+  <section class="mt-12 rounded-2xl border border-[var(--ac-border)] bg-[var(--ac-warm-soft)] p-6">
+    <h2 class="text-lg font-bold text-[var(--ac-ink)]">{t('city.peopleNoticeTitle')}</h2>
+    <p class="mt-1 text-sm text-[var(--ac-ink-muted)]">
+      {t('city.peopleNoticeBody', { city: cityMeta.name })}
+    </p>
+  </section>
+</BaseLayout>
