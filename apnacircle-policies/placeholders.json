@@ -1,0 +1,24 @@
+{
+  "_help": "Fill every empty value, then run: python3 -I fill_policies.py placeholders.json filled   (writes ready-to-publish copies into ./filled and lists anything still unfilled). Leave a value empty to keep that token unfilled.",
+
+  "version": "1.0",
+  "effective_date": "",
+  "_effective_date_note": "Leave empty to use the date you run the script. Use the actual publication date.",
+
+  "legal_entity": "",
+  "registered_address": "",
+
+  "domain": "",
+  "_domain_note": "Once the domain is cleared and bought, e.g. example.in. Empty email fields below are derived from it as contact@, privacy@, grievance@ and legal@.",
+  "contact_email": "",
+  "privacy_email": "",
+  "grievance_email": "",
+  "legal_requests_email": "",
+
+  "grievance_officer_name": "",
+  "_grievance_officer_note": "Must be a real, named individual resident in India. This cannot be invented or left generic on the live page.",
+  "grievance_officer_designation": "Grievance Officer",
+  "grievance_hours": "09:00 to 21:00 IST, seven days a week",
+
+  "jurisdiction": "Saharanpur, Uttar Pradesh"
+}
