@@ -61,7 +61,7 @@ importers:
         version: 4.3.5(vite@7.3.8(@types/node@22.20.7)(jiti@2.7.0)(lightningcss@1.33.0)(yaml@2.9.1))
       '@zentauri-ui/zentauri-components':
         specifier: ^2.18.0
-        version: 2.18.0(class-variance-authority@0.7.1)(clsx@2.1.1)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(tailwind-merge@3.7.1)
+        version: 2.18.0(class-variance-authority@0.7.1)(clsx@2.1.1)(react-dom@19.3.1(react@19.3.1))(react-icons@5.7.0(react@19.3.1))(react@19.3.1)(tailwind-merge@3.7.1)
       astro:
         specifier: ^5.5.2
         version: 5.18.2(@types/node@22.20.7)(jiti@2.7.0)(lightningcss@1.33.0)(rollup@4.68.8)(typescript@5.9.3)(yaml@2.9.1)
@@ -71,6 +71,9 @@ importers:
       react-dom:
         specifier: ^19.1.0
         version: 19.3.1(react@19.3.1)
+      react-icons:
+        specifier: ^5.5.0
+        version: 5.7.0(react@19.3.1)
       tailwindcss:
         specifier: ^4.0.14
         version: 4.3.5
@@ -112,7 +115,7 @@ importers:
         version: link:../types
       '@zentauri-ui/zentauri-components':
         specifier: ^2.18.0
-        version: 2.18.0(class-variance-authority@0.7.1)(clsx@2.1.1)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(tailwind-merge@3.7.1)
+        version: 2.18.0(class-variance-authority@0.7.1)(clsx@2.1.1)(react-dom@19.3.1(react@19.3.1))(react-icons@5.7.0(react@19.3.1))(react@19.3.1)(tailwind-merge@3.7.1)
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1
@@ -125,6 +128,9 @@ importers:
       react-dom:
         specifier: ^19.1.0
         version: 19.3.1(react@19.3.1)
+      react-icons:
+        specifier: ^5.5.0
+        version: 5.7.0(react@19.3.1)
       tailwind-merge:
         specifier: ^3.0.2
         version: 3.7.1
@@ -3580,6 +3586,11 @@ packages:
     peerDependencies:
       react: ^19.3.1
 
+  react-icons@5.7.0:
+    resolution: {integrity: sha512-LBLy340Rzqy6+/yVhZKT3B/QpP1BZaesGqasf09HPOBzRarcDIFH0WwXlXQfE7q7ipxK4MSiC5DIBWURCny6fw==}
+    peerDependencies:
+      react: '*'
+
   react-refresh@0.17.0:
     resolution: {integrity: sha512-z6F7K9bV85EfseRCp2bzrpyQ0Gkw1uLoCel9XBVWPg/TjRj94SkJzUTGfOa4bs7iJvBWtQG0Wq7wnI0syw3EBQ==}
     engines: {node: '>=0.10.0'}
@@ -6026,7 +6037,7 @@ snapshots:
 
   '@vscode/l10n@0.0.18': {}
 
-  '@zentauri-ui/zentauri-components@2.18.0(class-variance-authority@0.7.1)(clsx@2.1.1)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(tailwind-merge@3.7.1)':
+  '@zentauri-ui/zentauri-components@2.18.0(class-variance-authority@0.7.1)(clsx@2.1.1)(react-dom@19.3.1(react@19.3.1))(react-icons@5.7.0(react@19.3.1))(react@19.3.1)(tailwind-merge@3.7.1)':
     dependencies:
       class-variance-authority: 0.7.1
       clsx: 2.1.1
@@ -6036,6 +6047,8 @@ snapshots:
       react: 19.3.1
       react-dom: 19.3.1(react@19.3.1)
       tailwind-merge: 3.7.1
+    optionalDependencies:
+      react-icons: 5.7.0(react@19.3.1)
 
   abort-controller@3.0.0:
     dependencies:
@@ -8093,6 +8106,10 @@ snapshots:
     dependencies:
       react: 19.3.1
       scheduler: 0.28.0
+
+  react-icons@5.7.0(react@19.3.1):
+    dependencies:
+      react: 19.3.1
 
   react-refresh@0.17.0: {}
 

@@ -1,0 +1,5 @@
+# Vulnerability disclosure policy (update mailto after domain clearance)
+Contact: https://apnacircle.example/grievance
+Preferred-Languages: en
+Canonical: https://apnacircle.example/.well-known/security.txt
+Expires: 2027-11-26T00:00:00.000Z

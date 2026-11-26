@@ -1,0 +1,9 @@
+User-agent: *
+Allow: /
+Disallow: /people
+Disallow: /me/
+Disallow: /requests
+Disallow: /notifications
+Disallow: /settings
+Disallow: /u/
+Disallow: /api/

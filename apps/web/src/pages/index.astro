@@ -1,0 +1,119 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { t } from '@apnacircle/i18n';
+import { CATEGORIES } from '@apnacircle/types';
+---
+
+<BaseLayout title={t('brand.name')} description={t('brand.description')}>
+  <section class="rounded-3xl border border-[var(--ac-border)] bg-[var(--ac-surface)] px-6 py-10 shadow-[var(--ac-shadow-card)] sm:px-10 sm:py-14">
+    <p class="inline-flex rounded-full bg-[var(--ac-accent-soft)] px-3.5 py-1 text-xs font-semibold text-[var(--ac-accent)]">
+      {t('home.heroEyebrow')}
+    </p>
+    <h1 class="mt-4 max-w-3xl text-3xl font-bold tracking-tight text-[var(--ac-ink)] sm:text-5xl">
+      {t('home.heroTitle')}
+    </h1>
+    <p class="mt-4 max-w-2xl text-base leading-relaxed text-[var(--ac-ink-muted)] sm:text-lg">
+      {t('home.heroLead')}
+    </p>
+    <div class="mt-8 flex flex-wrap gap-3">
+      <a
+        href="/saharanpur"
+        class="inline-flex min-h-11 items-center justify-center rounded-xl bg-[var(--ac-accent)] px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[var(--ac-accent-hover)]"
+      >
+        {t('home.ctaExploreCity')}
+      </a>
+      <a
+        href="/saharanpur/meetups"
+        class="inline-flex min-h-11 items-center justify-center rounded-xl border border-[var(--ac-border-strong)] bg-[var(--ac-surface)] px-5 py-2.5 text-sm font-semibold text-[var(--ac-ink)] transition-colors hover:bg-[var(--ac-surface-muted)]"
+      >
+        {t('home.ctaBrowseMeetups')}
+      </a>
+      <a
+        href="/safety"
+        class="inline-flex min-h-11 items-center justify-center rounded-xl px-4 py-2.5 text-sm font-semibold text-[var(--ac-accent)] underline-offset-4 hover:underline"
+      >
+        {t('home.ctaSafety')}
+      </a>
+    </div>
+  </section>
+
+  <section class="mt-12" aria-labelledby="pillars-heading">
+    <h2 id="pillars-heading" class="text-2xl font-bold text-[var(--ac-ink)]">
+      {t('home.pillarsTitle')}
+    </h2>
+    <div class="mt-6 grid gap-6 md:grid-cols-3">
+      <article class="rounded-2xl border border-[var(--ac-border)] bg-[var(--ac-surface)] p-6 shadow-[var(--ac-shadow-card)]">
+        <h3 class="text-lg font-semibold text-[var(--ac-ink)]">{t('home.pillarPlacesTitle')}</h3>
+        <p class="mt-2 text-sm leading-relaxed text-[var(--ac-ink-muted)]">
+          {t('home.pillarPlacesBody')}
+        </p>
+      </article>
+      <article class="rounded-2xl border border-[var(--ac-border)] bg-[var(--ac-surface)] p-6 shadow-[var(--ac-shadow-card)]">
+        <h3 class="text-lg font-semibold text-[var(--ac-ink)]">{t('home.pillarMeetupsTitle')}</h3>
+        <p class="mt-2 text-sm leading-relaxed text-[var(--ac-ink-muted)]">
+          {t('home.pillarMeetupsBody')}
+        </p>
+      </article>
+      <article class="rounded-2xl border border-[var(--ac-border)] bg-[var(--ac-surface)] p-6 shadow-[var(--ac-shadow-card)]">
+        <h3 class="text-lg font-semibold text-[var(--ac-ink)]">{t('home.pillarSafetyTitle')}</h3>
+        <p class="mt-2 text-sm leading-relaxed text-[var(--ac-ink-muted)]">
+          {t('home.pillarSafetyBody')}
+        </p>
+      </article>
+    </div>
+  </section>
+
+  <section class="mt-12" aria-labelledby="categories-heading">
+    <div class="flex flex-wrap items-end justify-between gap-4">
+      <div>
+        <h2 id="categories-heading" class="text-2xl font-bold text-[var(--ac-ink)]">
+          {t('home.categoriesTitle')}
+        </h2>
+        <p class="mt-1 text-sm text-[var(--ac-ink-muted)]">{t('home.categoriesSubtitle')}</p>
+      </div>
+      <a
+        href="/saharanpur/places"
+        class="text-sm font-semibold text-[var(--ac-accent)] underline-offset-4 hover:underline"
+      >
+        {t('city.explorePlaces')}
+      </a>
+    </div>
+    <ul class="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      {
+        CATEGORIES.map((category) => (
+          <li>
+            <a
+              href={`/saharanpur/${category.slug}`}
+              class="flex items-center justify-between rounded-2xl border border-[var(--ac-border)] bg-[var(--ac-surface)] px-5 py-4 text-sm font-medium text-[var(--ac-ink)] shadow-[var(--ac-shadow-card)] transition-colors hover:border-[var(--ac-accent)] hover:text-[var(--ac-accent)]"
+            >
+              <span>{category.name}</span>
+              <span aria-hidden="true" class="text-xs text-[var(--ac-ink-muted)]">
+                &rarr;
+              </span>
+            </a>
+          </li>
+        ))
+      }
+    </ul>
+  </section>
+
+  <section
+    class="mt-12 rounded-2xl border border-[var(--ac-border)] bg-[var(--ac-warm-soft)] p-6 sm:p-8"
+    aria-labelledby="people-teaser-heading"
+  >
+    <h2 id="people-teaser-heading" class="text-xl font-bold text-[var(--ac-ink)]">
+      {t('home.peopleTeaserTitle')}
+    </h2>
+    <p class="mt-2 max-w-3xl text-sm leading-relaxed text-[var(--ac-ink-muted)]">
+      {t('home.peopleTeaserBody')}
+    </p>
+    <div class="mt-4">
+      <a
+        href="/people"
+        class="inline-flex items-center text-sm font-semibold text-[var(--ac-warm)] underline-offset-4 hover:underline"
+      >
+        {t('people.pageTitle')} &rarr;
+      </a>
+    </div>
+  </section>
+</BaseLayout>

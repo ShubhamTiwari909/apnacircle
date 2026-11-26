@@ -1,0 +1,20 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { t } from '@apnacircle/i18n';
+---
+
+<BaseLayout title={t('state.notFoundTitle')} noindex={true}>
+  <section class="mx-auto max-w-xl rounded-3xl border border-[var(--ac-border)] bg-[var(--ac-surface)] p-8 text-center shadow-[var(--ac-shadow-card)]">
+    <p class="text-sm font-semibold text-[var(--ac-warm)]">404</p>
+    <h1 class="mt-2 text-2xl font-bold text-[var(--ac-ink)]">{t('state.notFoundTitle')}</h1>
+    <p class="mt-2 text-sm text-[var(--ac-ink-muted)]">{t('state.notFoundBody')}</p>
+    <div class="mt-6">
+      <a
+        href="/"
+        class="inline-flex min-h-10 items-center rounded-xl bg-[var(--ac-accent)] px-4 py-2 text-sm font-semibold text-white hover:bg-[var(--ac-accent-hover)]"
+      >
+        {t('state.backHome')}
+      </a>
+    </div>
+  </section>
+</BaseLayout>

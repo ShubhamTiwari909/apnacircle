@@ -1,0 +1,34 @@
+{
+  "name": "@apnacircle/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "ASTRO_TELEMETRY_DISABLED=1 astro dev",
+    "build": "ASTRO_TELEMETRY_DISABLED=1 astro check && ASTRO_TELEMETRY_DISABLED=1 astro build",
+    "preview": "wrangler dev",
+    "typecheck": "ASTRO_TELEMETRY_DISABLED=1 astro check && tsc --noEmit"
+  },
+  "dependencies": {
+    "@apnacircle/i18n": "workspace:*",
+    "@apnacircle/types": "workspace:*",
+    "@apnacircle/ui": "workspace:*",
+    "@astrojs/cloudflare": "^12.5.0",
+    "@astrojs/react": "^4.2.1",
+    "@tailwindcss/vite": "^4.0.14",
+    "@zentauri-ui/zentauri-components": "^2.18.0",
+    "astro": "^5.5.2",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "react-icons": "^5.5.0",
+    "tailwindcss": "^4.0.14",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.4",
+    "@cloudflare/workers-types": "^4.20250320.0",
+    "@types/react": "^19.1.2",
+    "@types/react-dom": "^19.1.2",
+    "wrangler": "^4.4.0"
+  }
+}
