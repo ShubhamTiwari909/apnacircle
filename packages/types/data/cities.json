@@ -1,0 +1,56 @@
+[
+  {
+    "slug": "saharanpur",
+    "name": "Saharanpur",
+    "state": "Uttar Pradesh",
+    "country": "IN",
+    "active": true,
+    "rolloutOrder": 1,
+    "timezone": "Asia/Kolkata"
+  },
+  {
+    "slug": "roorkee",
+    "name": "Roorkee",
+    "state": "Uttarakhand",
+    "country": "IN",
+    "active": false,
+    "rolloutOrder": 2,
+    "timezone": "Asia/Kolkata"
+  },
+  {
+    "slug": "muzaffarnagar",
+    "name": "Muzaffarnagar",
+    "state": "Uttar Pradesh",
+    "country": "IN",
+    "active": false,
+    "rolloutOrder": 2,
+    "timezone": "Asia/Kolkata"
+  },
+  {
+    "slug": "haridwar",
+    "name": "Haridwar",
+    "state": "Uttarakhand",
+    "country": "IN",
+    "active": false,
+    "rolloutOrder": 3,
+    "timezone": "Asia/Kolkata"
+  },
+  {
+    "slug": "dehradun",
+    "name": "Dehradun",
+    "state": "Uttarakhand",
+    "country": "IN",
+    "active": false,
+    "rolloutOrder": 3,
+    "timezone": "Asia/Kolkata"
+  },
+  {
+    "slug": "meerut",
+    "name": "Meerut",
+    "state": "Uttar Pradesh",
+    "country": "IN",
+    "active": false,
+    "rolloutOrder": 4,
+    "timezone": "Asia/Kolkata"
+  }
+]

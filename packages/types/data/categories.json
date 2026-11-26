@@ -1,0 +1,68 @@
+[
+  {
+    "slug": "places-to-visit",
+    "name": "Places to Visit",
+    "featuredRoute": true,
+    "kind": "place"
+  },
+  {
+    "slug": "cafes-and-restaurants",
+    "name": "Cafes & Restaurants",
+    "featuredRoute": true,
+    "kind": "place"
+  },
+  {
+    "slug": "parks-and-outdoor-spaces",
+    "name": "Parks & Outdoor Spaces",
+    "featuredRoute": false,
+    "kind": "place"
+  },
+  {
+    "slug": "photography-spots",
+    "name": "Photography Spots",
+    "featuredRoute": true,
+    "kind": "place"
+  },
+  {
+    "slug": "historical-places",
+    "name": "Historical Places",
+    "featuredRoute": false,
+    "kind": "place"
+  },
+  {
+    "slug": "shopping-and-markets",
+    "name": "Shopping & Markets",
+    "featuredRoute": false,
+    "kind": "place"
+  },
+  {
+    "slug": "weekend-activities",
+    "name": "Weekend Activities",
+    "featuredRoute": true,
+    "kind": "activity"
+  },
+  {
+    "slug": "sports-and-fitness",
+    "name": "Sports & Fitness",
+    "featuredRoute": false,
+    "kind": "activity"
+  },
+  {
+    "slug": "food-exploration",
+    "name": "Food Exploration",
+    "featuredRoute": false,
+    "kind": "activity"
+  },
+  {
+    "slug": "tech-and-professional-communities",
+    "name": "Tech & Professional Communities",
+    "featuredRoute": false,
+    "kind": "activity"
+  },
+  {
+    "slug": "arts-music-and-hobbies",
+    "name": "Arts, Music & Hobbies",
+    "featuredRoute": false,
+    "kind": "activity"
+  }
+]
