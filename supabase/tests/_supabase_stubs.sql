@@ -89,3 +89,17 @@ create schema if not exists net;
 create table if not exists net.http_calls (id bigserial primary key, url text, headers jsonb, body text);
 create or replace function net.http_post(url text, headers jsonb default '{}'::jsonb, body text default '{}') returns bigint
 language sql as $$ insert into net.http_calls (url, headers, body) values (url, headers, body) returning id $$;
+
+-- Minimal Storage metadata used by the profile-media migration and reconciliation tests.
+create schema storage;
+create table storage.buckets (
+  id text primary key, name text not null, public boolean default false,
+  file_size_limit bigint, allowed_mime_types text[]
+);
+create table storage.objects (
+  id uuid primary key default gen_random_uuid(), bucket_id text references storage.buckets(id),
+  name text not null, created_at timestamptz not null default now(), unique (bucket_id, name)
+);
+alter table storage.objects enable row level security;
+grant usage on schema storage to anon, authenticated;
+grant select, insert, update, delete on storage.objects to anon, authenticated;

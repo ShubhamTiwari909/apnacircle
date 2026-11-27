@@ -6,7 +6,7 @@
 # 2. Applies Supabase stand-ins, then every migration that works on plain Postgres
 #    (004 is skipped because it installs the pg_cron extension; the stubs stand in for pg_cron and
 #    pg_net so 005 and 008, and the privileges they set, are exercised).
-# 3. Runs supabase/tests/p4/*.sql (plain SQL assertions) and concurrency tests.
+# 3. Runs the Phase 4 and Phase 6 SQL assertions and concurrency tests.
 # 4. Runs the legacy pgTAP suites only if the pgtap extension is installed.
 #
 # Usage:  pnpm test:db            (KEEP_TEST_DB=1 keeps the cluster / test database for inspection)
@@ -104,7 +104,7 @@ done
 
 FAILED=0
 shopt -s nullglob
-for t in "$SQL_DIR"/tests/p4/*.sql; do
+for t in "$SQL_DIR"/tests/p4/*.sql "$SQL_DIR"/tests/p6/*.sql; do
   echo "[test:db] $(basename "$t")"
   # Result tables go to /dev/null; assertion notices ("ok - ...") and errors stay visible.
   if ! "$PSQL" "$CONN" -v ON_ERROR_STOP=1 -q -X -f "$t" 2>&1 >/dev/null | sed -e 's/^psql:.*:[0-9]*: NOTICE:  //' -e 's/^/    /'; then FAILED=1; fi

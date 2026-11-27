@@ -59,17 +59,15 @@ serve(async (req) => {
       }
 
       case 'cleanup_orphaned_photos': {
-        // Delete photos for banned/deleted profiles
-        const { data, error } = await supabase
-          .from('profile_photos')
-          .delete()
-          .in('profile_id', supabase
-            .from('profiles')
-            .select('id')
-            .in('profile_status', ['banned', 'suspended'])
-          );
+        const { data: removedRows, error: rowError } = await supabase.rpc('reconcile_profile_photo_rows');
+        if (rowError) throw rowError;
+        const { data: paths, error } = await supabase.rpc('orphaned_profile_photo_objects');
         if (error) throw error;
-        result = { deleted_count: data?.length || 0 };
+        if (paths?.length) {
+          const { error: removeError } = await supabase.storage.from('profile-photos').remove(paths);
+          if (removeError) throw removeError;
+        }
+        result = { deleted_count: paths?.length ?? 0, removed_rows: removedRows };
         break;
       }
 

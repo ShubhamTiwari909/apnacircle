@@ -1,0 +1,143 @@
+---
+import { env } from 'cloudflare:workers';
+import { t } from '@apnacircle/i18n';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import { getPublicApiConfig } from '../../lib/meetups.js';
+import { getMemberProfile, profileReadIpLimiter } from '../../lib/member-profile.js';
+import { isMemberProfileId, PROFILE_AUTH_PATH, PROFILE_SESSION } from '../../lib/profile-editor.js';
+import { fetchSignedProfilePhotoUrls, PROFILE_MEDIA_PATH } from '../../lib/profile-photo-links.js';
+
+export const prerender = false;
+
+const id = Astro.params.id ?? '';
+const token = Astro.cookies.get(PROFILE_SESSION)?.value;
+const config = getPublicApiConfig({
+  PUBLIC_SUPABASE_URL: env.PUBLIC_SUPABASE_URL ?? import.meta.env.PUBLIC_SUPABASE_URL,
+  PUBLIC_SUPABASE_ANON_KEY:
+    env.PUBLIC_SUPABASE_ANON_KEY ?? import.meta.env.PUBLIC_SUPABASE_ANON_KEY,
+});
+
+let result: Awaited<ReturnType<typeof getMemberProfile>>;
+if (!isMemberProfileId(id)) {
+  result = { ok: false, reason: 'missing' };
+} else if (!token) {
+  result = { ok: false, reason: 'session' };
+} else if (!config) {
+  result = { ok: false, reason: 'unavailable' };
+} else {
+  const ip = Astro.request.headers.get('CF-Connecting-IP');
+  const limit = ip ? profileReadIpLimiter.check(ip) : null;
+  if (limit && !limit.allowed) {
+    Astro.response.headers.set('Retry-After', String(limit.retryAfterSeconds));
+    result = { ok: false, reason: 'limited' };
+  } else {
+    result = await getMemberProfile(config, token, id);
+  }
+}
+
+const statusCodes = { session: 401, missing: 404, limited: 429, unavailable: 503 };
+if (!result.ok) Astro.response.status = statusCodes[result.reason];
+
+const profile = result.ok ? result.profile : null;
+const signedPhotos =
+  config && token && profile
+    ? await fetchSignedProfilePhotoUrls(config, token, profile.photoIds, 'display')
+    : new Map<string, string>();
+const photos =
+  profile?.photoIds.flatMap((photoId) => {
+    const query = signedPhotos.get(photoId);
+    return query ? [query] : [];
+  }) ?? [];
+const signInHref = `${PROFILE_AUTH_PATH}?${new URLSearchParams({ start: '1', returnTo: `/u/${id}` })}`;
+const signInOutcome = Astro.url.searchParams.get('signin');
+const signInError =
+  signInOutcome === 'membership'
+    ? t('profile.membershipRequired')
+    : signInOutcome === 'failed'
+      ? t('profile.signInFailed')
+      : null;
+---
+
+<BaseLayout title={t('memberProfile.pageTitle')} noindex={true}>
+  <section class="mx-auto max-w-2xl">
+    <a
+      href="/people"
+      class="inline-flex min-h-10 items-center text-sm font-semibold underline underline-offset-4"
+    >
+      {t('memberProfile.back')}
+    </a>
+
+    {
+      profile ? (
+        <article class="mt-4 rounded-2xl border border-[var(--ac-border)] bg-[var(--ac-surface)] p-5 sm:p-8">
+          <header>
+            <h1 class="break-words text-3xl font-bold tracking-tight">{profile.displayName}</h1>
+            {profile.city && <p class="mt-1 text-[var(--ac-ink-muted)]">{profile.city}</p>}
+            {profile.intent && <p class="mt-2 text-sm">{t(`profile.intent.${profile.intent}`)}</p>}
+          </header>
+          {profile.bio && (
+            <p class="mt-5 whitespace-pre-line break-words leading-relaxed">{profile.bio}</p>
+          )}
+          {profile.interests.length > 0 && (
+            <section class="mt-6" aria-labelledby="member-interests">
+              <h2 id="member-interests" class="font-semibold">
+                {t('memberProfile.interests')}
+              </h2>
+              <ul class="mt-2 flex flex-wrap gap-2">
+                {profile.interests.map((interest) => (
+                  <li class="break-words rounded-full border border-[var(--ac-border)] px-3 py-1 text-sm">
+                    {interest}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+          {photos.length > 0 && (
+            <section class="mt-6" aria-labelledby="member-photos">
+              <h2 id="member-photos" class="font-semibold">
+                {t('memberProfile.photos')}
+              </h2>
+              <ul class="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
+                {photos.map((query, index) => (
+                  <li>
+                    <img
+                      src={PROFILE_MEDIA_PATH + query}
+                      alt={t('memberProfile.photoAlt', { number: index + 1 })}
+                      width="320"
+                      height="320"
+                      class="aspect-square w-full rounded-xl bg-[var(--ac-bg)] object-cover"
+                    />
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+        </article>
+      ) : (
+        !result.ok && (
+          <div class="mt-4 rounded-2xl border border-[var(--ac-border)] bg-[var(--ac-surface)] p-5 sm:p-8">
+            <h1 class="text-2xl font-bold">{t(`memberProfile.title.${result.reason}`)}</h1>
+            <p class="mt-2 text-[var(--ac-ink-muted)]">
+              {t(`memberProfile.body.${result.reason}`)}
+            </p>
+            {result.reason === 'session' && (
+              <>
+                {signInError && (
+                  <p role="alert" class="mt-3 text-sm">
+                    {signInError}
+                  </p>
+                )}
+                <a
+                  href={signInHref}
+                  class="mt-5 inline-flex min-h-11 items-center rounded-xl bg-[var(--ac-accent)] px-5 text-sm font-semibold text-white hover:bg-[var(--ac-accent-hover)]"
+                >
+                  {t('profile.signIn')}
+                </a>
+              </>
+            )}
+          </div>
+        )
+      )
+    }
+  </section>
+</BaseLayout>

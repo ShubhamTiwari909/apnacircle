@@ -1,6 +1,7 @@
 User-agent: *
 Allow: /
 Disallow: /people
+Disallow: /*/people
 Disallow: /me/
 Disallow: /requests
 Disallow: /notifications

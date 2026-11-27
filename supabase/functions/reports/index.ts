@@ -108,8 +108,9 @@ serve(async (req) => {
             case 'profile_photo': {
               const { data: photo } = await supabase
                 .from('profile_photos')
-                .select('id, profile_id, storage_path, thumb_path, visibility, moderation_status, phash, sort_order, created_at')
+                .select('id, visibility, moderation_status, sort_order, created_at')
                 .eq('id', body.target_id)
+                .eq('profile_id', userId)
                 .single();
               if (photo) evidenceSnapshot = { photo };
               break;

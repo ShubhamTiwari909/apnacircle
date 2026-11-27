@@ -58,8 +58,11 @@ select has_delete_privilege('public', 'profiles', 'authenticated', 'authenticate
 -- Anon CANNOT select profiles
 select not has_select_privilege('public', 'profiles', 'anon', 'anon cannot select profiles');
 
--- Member can only select discovered profiles (tested via policy_function tests)
-select has_policy('public', 'profiles', 'member read discovered profiles', 'member read discovered profiles policy exists');
+-- Discovery opt-ins alone cannot expose profiles before directory unlock.
+select ok(not exists (
+  select 1 from pg_policies
+  where schemaname = 'public' and tablename = 'profiles' and policyname = 'member read discovered profiles'
+), 'cross-member profile reads stay locked');
 
 select * from finish();
 rollback;
@@ -72,12 +75,12 @@ begin;
 select plan(4);
 
 -- Owner can manage photos
-select has_insert_privilege('public', 'profile_photos', 'authenticated', 'authenticated can insert photos');
-select has_update_privilege('public', 'profile_photos', 'authenticated', 'authenticated can update photos');
-select has_delete_privilege('public', 'profile_photos', 'authenticated', 'authenticated can delete photos');
+select ok(not has_table_privilege('authenticated', 'public.profile_photos', 'INSERT'), 'direct member photo insert is disabled');
+select ok(not has_table_privilege('authenticated', 'public.profile_photos', 'UPDATE'), 'direct member photo update is disabled');
+select ok(not has_table_privilege('authenticated', 'public.profile_photos', 'DELETE'), 'direct member photo delete is disabled');
 
 -- Member can view approved photos with visibility rules
-select has_select_privilege('public', 'profile_photos', 'authenticated', 'authenticated can select photos');
+select ok(not has_table_privilege('authenticated', 'public.profile_photos', 'SELECT'), 'direct member photo select is disabled');
 
 select * from finish();
 rollback;

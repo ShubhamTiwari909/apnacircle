@@ -194,9 +194,12 @@ const faqs = (
   </section>
 
   <section class="mt-12 rounded-2xl border border-[var(--ac-border)] bg-[var(--ac-warm-soft)] p-6">
-    <h2 class="text-lg font-bold text-[var(--ac-ink)]">{t('city.peopleNoticeTitle')}</h2>
+    <h2 class="text-lg font-bold text-[var(--ac-ink)]">{t('people.cityTitle', { city: cityMeta.name })}</h2>
     <p class="mt-1 text-sm text-[var(--ac-ink-muted)]">
-      {t('city.peopleNoticeBody', { city: cityMeta.name })}
+      {t('city.peopleNoticeBody')}
     </p>
+    <a href={`/${cityMeta.slug}/people`} class="mt-3 inline-flex min-h-10 items-center text-sm font-semibold underline underline-offset-4">
+      {t('city.peopleReadinessLink')}
+    </a>
   </section>
 </BaseLayout>
