@@ -118,6 +118,17 @@ select t.as_user(t.u(6));
 select t.ok((select jsonb_array_length(attendees) from public.get_meetup_member_view(:'mid')) = 1, 'blocked members are hidden from each other (only the host/self visible)');
 reset role;
 
+-- Access is rechecked after approval, including blocks in either direction.
+insert into public.connection_blocks (blocker_id, blocked_id) values (t.u(2), t.u(6));
+select t.as_user(t.u(6));
+select t.throws(format('select * from public.get_meetup_member_view(%L)', :'mid'), 'P0404', 'a blocked attendee cannot see the private view');
+reset role;
+insert into public.user_sanctions (user_id, level, reason) values (t.u(4), 'suspension', 'sanctioned after approval');
+select t.as_user(t.u(4));
+select t.throws(format('select * from public.get_meetup_member_view(%L)', :'mid'), 'P0404', 'a sanctioned attendee cannot see the private view');
+reset role;
+delete from public.user_sanctions where user_id = t.u(4);
+
 -- Public listing exposes counts, not people
 select t.as_anon();
 select t.ok((select attendee_count from public.list_public_meetups() where id = :'mid') = 2, 'public attendee count reflects approved attendees');

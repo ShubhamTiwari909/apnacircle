@@ -98,7 +98,7 @@ serve(async (req) => {
         // Notify moderators
         await supabase.from('notification_outbox').insert({
           channel: 'email',
-          recipient_id: 'moderators',
+          staff_inbox: 'moderators',
           payload: {
             type: 'banned_photo_match',
             photo_id: body.photo_id,
@@ -160,7 +160,7 @@ serve(async (req) => {
           // Notify moderators
           await supabase.from('notification_outbox').insert({
             channel: 'email',
-            recipient_id: 'moderators',
+            staff_inbox: 'moderators',
             payload: {
               type: 'banned_photo_near_match',
               photo_id: body.photo_id,

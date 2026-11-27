@@ -63,7 +63,7 @@ export function renderMessage(payload: OutboxPayload, siteUrl: string): Rendered
   const decision = clean(payload.decision, 20);
   const priority = payload.priority === true;
   const site = siteUrl.replace(/\/+$/, '');
-  const url = `${site}/meetups`;
+  const url = /^(rsvp_|meetup_|host_decision$)/.test(type) ? `${site}/meetups` : site;
 
   const make = (subject: string, lines: string[], pushBody: string): RenderedMessage => ({
     subject,
@@ -113,6 +113,27 @@ export function renderMessage(payload: OutboxPayload, siteUrl: string): Rendered
       return decision === 'approve'
         ? make(`Approved: ${title}`, [`Your meetup "${title}" is approved and now public.`], 'Your meetup is now public.')
         : make(`Needs changes: ${title}`, [`An admin has asked for changes to "${title}" before it can go live. Open ApnaCircle to read their note.`], 'Changes requested.');
+    case 'connection_request':
+      return make('New connection request', ['Someone sent you a connection request.'], 'Someone sent you a connection request.');
+    case 'connection_accepted':
+      return make('Connection accepted', ['Your connection request has been accepted.'], 'Your connection request has been accepted.');
+    case 'new_report':
+      return make('New report for review', ['A report is ready for staff review.'], 'A report is ready for staff review.');
+    case 'new_grievance':
+      return make('New grievance for review', ['A grievance is ready for the grievance officer.'], 'A grievance is ready for the grievance officer.');
+    case 'grievance_received':
+      return make('We received your grievance', ['Your grievance has been received.'], 'Your grievance has been received.');
+    case 'grievance_update':
+      return make('Update on your grievance', ['There is an update on your grievance.'], 'There is an update on your grievance.');
+    case 'block_created':
+      return make('Block confirmed', ['Your block is active.'], 'Your block is active.');
+    case 'appeal_submitted':
+      return make('New appeal for review', ['An appeal is ready for staff review.'], 'An appeal is ready for staff review.');
+    case 'photo_held_review':
+      return make('Your photo is under review', ['A photo you uploaded has been held for review.'], 'A photo you uploaded has been held for review.');
+    case 'banned_photo_match':
+    case 'banned_photo_near_match':
+      return make('Photo flagged for review', ['A photo is ready for staff review.'], 'A photo is ready for staff review.');
     case 'moderation_outcome':
       return make('Update on your report', ['There is an update on a report you made. Please open ApnaCircle for details.'], 'There is an update on your report.');
     case 'moderation_action':

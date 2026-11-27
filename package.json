@@ -5,7 +5,7 @@
   "description": "ApnaCircle \u2014 city-based social discovery and local meetup platform",
   "packageManager": "pnpm@10.33.0",
   "engines": {
-    "node": ">=22.0.0",
+    "node": ">=22.23.4",
     "pnpm": ">=10.0.0"
   },
   "scripts": {
@@ -30,6 +30,6 @@
     "prettier-plugin-astro": "^0.14.1",
     "typescript": "^5.8.2",
     "typescript-eslint": "^8.26.1",
-    "vitest": "^3.0.9"
+    "vitest": "^5.1.2"
   }
 }

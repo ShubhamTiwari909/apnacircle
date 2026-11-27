@@ -1,4 +1,5 @@
 ---
+import { env } from 'cloudflare:workers';
 import BaseLayout from '../../../layouts/BaseLayout.astro';
 import { t } from '@apnacircle/i18n';
 import { ACTIVE_CITIES } from '@apnacircle/types';
@@ -22,7 +23,7 @@ if (!cityMeta || !/^[a-z0-9-]{1,80}$/.test(slug)) {
   return Astro.rewrite('/404');
 }
 
-const config = getPublicApiConfig({ ...import.meta.env, ...(Astro.locals.runtime?.env ?? {}) });
+const config = getPublicApiConfig({ ...import.meta.env, ...env });
 const result = config ? await getPublicMeetup(config, cityMeta.slug, slug) : ({ ok: false } as const);
 
 if (result.ok && result.data === null) {

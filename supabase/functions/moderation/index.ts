@@ -438,7 +438,7 @@ serve(async (req) => {
         // Create appeal notification for moderators
         await supabase.from('notification_outbox').insert({
           channel: 'email',
-          recipient_id: 'moderators',
+          staff_inbox: 'moderators',
           payload: { type: 'appeal_submitted', sanction_id: sanction.id, user_id: userId, reason: body.appeal_reason },
           idempotency_key: `appeal_${sanction.id}_moderators`,
         }, { upsert: true });

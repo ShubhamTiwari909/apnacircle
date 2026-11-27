@@ -22,7 +22,8 @@ const FETCH_TIMEOUT_MS = 10_000;
 interface OutboxRow {
   id: string;
   channel: 'email' | 'push' | 'in_app';
-  recipient_id: string;
+  recipient_id: string | null;
+  staff_inbox: 'moderators' | 'grievance_officer' | null;
   payload: OutboxPayload;
 }
 
@@ -92,8 +93,8 @@ async function deliver(supabase: ReturnType<typeof createClient>, row: OutboxRow
   const message = renderMessage(row.payload ?? {}, siteUrl);
   if (!message) return { ok: false, permanent: true, error: 'unknown notification type' };
 
-  if (row.channel === 'email') return await sendEmail(supabase, row.id, row.recipient_id, message.subject, message.text);
-  if (row.channel === 'push') {
+  if (row.channel === 'email') return await sendEmail(supabase, row, message.subject, message.text);
+  if (row.channel === 'push' && row.recipient_id) {
     return await sendPush(supabase, row.recipient_id, {
       title: message.pushTitle,
       body: message.pushBody,
@@ -106,8 +107,7 @@ async function deliver(supabase: ReturnType<typeof createClient>, row: OutboxRow
 
 async function sendEmail(
   supabase: ReturnType<typeof createClient>,
-  rowId: string,
-  recipientId: string,
+  row: OutboxRow,
   subject: string,
   text: string,
 ): Promise<Outcome> {
@@ -115,14 +115,22 @@ async function sendEmail(
   const from = Deno.env.get('FROM_EMAIL');
   if (!apiKey || !from) return { ok: false, error: 'email provider is not configured' };
 
-  const { data: found } = await supabase.auth.admin.getUserById(recipientId);
-  const to = found.user?.email;
+  let to: string | undefined;
+  if (row.staff_inbox) {
+    const setting = row.staff_inbox === 'moderators' ? 'MODERATION_INBOX_EMAIL' : 'GRIEVANCE_INBOX_EMAIL';
+    to = Deno.env.get(setting);
+    if (!to) return { ok: false, error: 'staff inbox is not configured' };
+  } else if (row.recipient_id) {
+    const { data: found, error } = await supabase.auth.admin.getUserById(row.recipient_id);
+    if (error && error.status !== 404) return { ok: false, error: 'recipient lookup failed' };
+    to = found?.user?.email;
+  }
   if (!to) return { ok: false, permanent: true, error: 'recipient has no email address' };
 
   const response = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     // The row id makes a retry after a lost response a no-op at the provider instead of a duplicate email.
-    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json', 'Idempotency-Key': rowId },
+    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json', 'Idempotency-Key': row.id },
     body: JSON.stringify({ from, to, subject, text }),
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   });

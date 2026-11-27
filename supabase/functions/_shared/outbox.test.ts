@@ -4,6 +4,16 @@ import { renderMessage } from './outbox.ts';
 const SITE = 'https://apnacircle.example/';
 
 describe('renderMessage', () => {
+  it.each([
+    'connection_request', 'connection_accepted', 'new_report', 'new_grievance',
+    'grievance_received', 'grievance_update', 'block_created', 'appeal_submitted',
+    'photo_held_review', 'banned_photo_match', 'banned_photo_near_match',
+  ])('renders queued %s notifications without exposing case details', (type) => {
+    const message = renderMessage({ type, reason: 'private case detail' }, SITE);
+    expect(message?.url).toBe(SITE);
+    expect(message?.text).not.toContain('private case detail');
+  });
+
   it('renders a cancellation with title, time and the host reason, flagged priority', () => {
     const m = renderMessage(
       { type: 'meetup_cancelled', meetup_title: 'Sunday ride', reason: 'Heavy rain', starts_at: '2030-12-01T04:30:00Z', priority: true },

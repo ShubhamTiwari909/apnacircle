@@ -106,7 +106,7 @@ serve(async (req) => {
       // Auto-acknowledge and notify Grievance Officer
       await supabase.from('notification_outbox').insert({
         channel: 'email',
-        recipient_id: 'grievance_officer', // Special handling
+        staff_inbox: 'grievance_officer',
         payload: {
           type: 'new_grievance',
           grievance_id: grievance.id,

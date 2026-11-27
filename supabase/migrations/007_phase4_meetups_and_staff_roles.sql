@@ -172,7 +172,16 @@ alter table public.meetup_feedback
   add constraint meetup_feedback_note_len check (note is null or char_length(note) <= 1000);
 
 alter table public.notification_outbox
+  alter column recipient_id drop not null,
+  add column if not exists staff_inbox text,
   add column if not exists sent_at timestamptz;
+
+alter table public.notification_outbox drop constraint if exists notification_outbox_recipient;
+alter table public.notification_outbox add constraint notification_outbox_recipient check (
+  (recipient_id is not null and staff_inbox is null)
+  or (recipient_id is null and staff_inbox is not null and channel = 'email'
+      and staff_inbox in ('moderators', 'grievance_officer'))
+);
 
 alter table public.notifications
   add column if not exists dedupe_key text;
@@ -1216,8 +1225,8 @@ begin
   if not found or v_m.host_id <> v_uid then
     raise exception 'Meetup not found' using errcode = 'P0404';
   end if;
-  if v_m.status <> 'published' or now() < v_m.starts_at then
-    raise exception 'Only a published meetup that has started can be completed' using errcode = 'P0409';
+  if v_m.status <> 'published' or now() < coalesce(v_m.ends_at, v_m.starts_at + interval '3 hours') then
+    raise exception 'Only a published meetup that has ended can be completed' using errcode = 'P0409';
   end if;
   perform app_private.complete_meetup_core(p_meetup_id);
   insert into public.audit_log (actor_id, action, target)
@@ -1384,7 +1393,10 @@ begin
     raise exception 'Meetup not found' using errcode = 'P0404';
   end if;
   select a.status into v_my from public.meetup_attendees a where a.meetup_id = p_meetup_id and a.user_id = v_uid;
-  if v_m.host_id <> v_uid and coalesce(v_my::text, '') not in ('approved', 'attended') then
+  if v_m.host_id <> v_uid and (
+    coalesce(v_my::text, '') not in ('approved', 'attended')
+    or app_private.join_blocker(v_uid, v_m) is not null
+  ) then
     raise exception 'Meetup not found' using errcode = 'P0404';
   end if;
 

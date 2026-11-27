@@ -33,6 +33,10 @@ select t.throws(format('select public.complete_meetup(%L)', :'mid'), 'P0404', 'o
 reset role;
 select t.as_user(t.u(2));
 select t.throws(format('select public.submit_meetup_feedback(%L, 5, 5, null)', :'mid'), 'P0403', 'the host is not an attendee and cannot leave attendee feedback');
+select t.throws(format('select public.complete_meetup(%L)', :'mid'), 'P0409', 'a meetup in progress cannot be completed');
+reset role;
+update public.meetups set starts_at = now() - interval '2 hours', ends_at = now() - interval '1 hour' where id = :'mid';
+select t.as_user(t.u(2));
 select public.complete_meetup(:'mid');
 reset role;
 select t.ok((select status = 'no_show' from public.meetup_attendees where meetup_id = :'mid' and user_id = t.u(6)), 'approved people who did not show are marked no_show');

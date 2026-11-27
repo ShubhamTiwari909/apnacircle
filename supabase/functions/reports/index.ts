@@ -199,7 +199,7 @@ serve(async (req) => {
       // Queue notification to moderators
       await supabase.from('notification_outbox').insert({
         channel: 'email',
-        recipient_id: 'moderators', // Special handling in processor
+        staff_inbox: 'moderators',
         payload: {
           type: 'new_report',
           report_id: report.id,
