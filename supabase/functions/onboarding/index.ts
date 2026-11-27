@@ -114,7 +114,7 @@ serve(async (req) => {
 
     // Validate interests exist
     if (body.interestIds.length > 0) {
-      const { data: interests, count } = await supabase
+      const { count } = await supabase
         .from('interests')
         .select('id', { count: 'exact' })
         .in('id', body.interestIds);

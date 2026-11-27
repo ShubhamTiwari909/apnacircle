@@ -1,5 +1,6 @@
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.0';
+import { isStaff } from '../_shared/staff.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -49,13 +50,8 @@ serve(async (req) => {
     const userId = user.id;
 
     // Verify moderator/admin role
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('trust_level')
-      .eq('id', userId)
-      .single();
-
-    if (!profile || profile.trust_level !== 'Restricted') {
+    // Staff = app_metadata role (+ MFA session where applicable); trust level plays no part (plan 7.3).
+    if (!isStaff(user, authHeader.replace('Bearer ', ''))) {
       return new Response(JSON.stringify({ error: 'Forbidden: moderator role required' }), {
         status: 403,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },

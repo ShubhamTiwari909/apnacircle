@@ -1,6 +1,9 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
 import { t } from '@apnacircle/i18n';
+
+// On-demand so dynamic routes (e.g. an unknown meetup) can rewrite here and still return a 404.
+export const prerender = false;
 ---
 
 <BaseLayout title={t('state.notFoundTitle')} noindex={true}>

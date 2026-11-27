@@ -2,7 +2,7 @@
   "name": "apnacircle",
   "version": "0.1.0",
   "private": true,
-  "description": "ApnaCircle — city-based social discovery and local meetup platform",
+  "description": "ApnaCircle \u2014 city-based social discovery and local meetup platform",
   "packageManager": "pnpm@10.33.0",
   "engines": {
     "node": ">=22.0.0",
@@ -15,7 +15,7 @@
     "format:check": "prettier --check .",
     "typecheck": "pnpm -r typecheck",
     "test": "vitest run",
-    "test:db": "node scripts/check-db-phase.mjs",
+    "test:db": "bash scripts/test-db.sh",
     "test:e2e": "node scripts/check-e2e-phase.mjs",
     "check:i18n": "pnpm --filter @apnacircle/i18n check",
     "check:policies": "python3 -I apnacircle-policies/fill_policies.py apnacircle-policies/placeholders.json apnacircle-policies/filled || true"
