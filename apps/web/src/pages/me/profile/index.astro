@@ -1,0 +1,350 @@
+---
+import { env } from 'cloudflare:workers';
+import { t } from '@apnacircle/i18n';
+import BaseLayout from '../../../layouts/BaseLayout.astro';
+import { getPublicApiConfig } from '../../../lib/meetups.js';
+import { isAllowedOrigin } from '../../../lib/origin.js';
+import {
+  getProfileEditor,
+  LEGACY_PROFILE_SESSION,
+  profileCookieOptions,
+  PROFILE_AUTH_PATH,
+  PROFILE_INTENTS,
+  PROFILE_PATH,
+  PROFILE_SESSION,
+  PROFILE_SESSION_PATH,
+  readProfileForm,
+  saveProfile,
+  validateProfileForm,
+  type ProfileEditor,
+  type ProfileField,
+} from '../../../lib/profile-editor.js';
+
+export const prerender = false;
+
+const config = getPublicApiConfig({
+  PUBLIC_SUPABASE_URL: env.PUBLIC_SUPABASE_URL ?? import.meta.env.PUBLIC_SUPABASE_URL,
+  PUBLIC_SUPABASE_ANON_KEY:
+    env.PUBLIC_SUPABASE_ANON_KEY ?? import.meta.env.PUBLIC_SUPABASE_ANON_KEY,
+});
+const isPost = Astro.request.method === 'POST';
+function clearSession() {
+  Astro.cookies.delete(PROFILE_SESSION, profileCookieOptions(Astro.url, PROFILE_SESSION_PATH));
+  Astro.cookies.delete(LEGACY_PROFILE_SESSION, profileCookieOptions(Astro.url, PROFILE_PATH));
+}
+const token = (Astro.cookies.get(PROFILE_SESSION) ?? Astro.cookies.get(LEGACY_PROFILE_SESSION))?.value;
+let submitted: FormData | undefined;
+
+if (isPost) {
+  if (!isAllowedOrigin(Astro.request.headers.get('origin'), Astro.url.origin)) {
+    return new Response(null, { status: 403 });
+  }
+  if (
+    Astro.request.headers.get('content-type')?.split(';')[0] !== 'application/x-www-form-urlencoded'
+  ) {
+    return new Response(null, { status: 415 });
+  }
+  try {
+    submitted = await Astro.request.formData();
+  } catch {
+    return new Response(null, { status: 400 });
+  }
+  if (submitted.get('action') === 'sign-out') {
+    clearSession();
+    return Astro.redirect(PROFILE_PATH, 303);
+  }
+} else if (!['GET', 'HEAD'].includes(Astro.request.method)) {
+  return new Response(null, { status: 405, headers: { Allow: 'GET, HEAD, POST' } });
+}
+
+let editor: ProfileEditor | undefined;
+let notice: 'membership' | 'unavailable' | 'expired' | 'signin' | undefined;
+let saveFailed = false;
+const invalid = new Set<ProfileField>();
+const signin = Astro.url.searchParams.get('signin');
+
+if (!config) {
+  Astro.response.status = 503;
+  notice = 'unavailable';
+} else if (!token) {
+  if (isPost) Astro.response.status = 401;
+  if (signin === 'membership') notice = 'membership';
+  if (signin === 'failed') notice = 'signin';
+} else {
+  const result = await getProfileEditor(config, token);
+  if (result.ok) {
+    editor = result.data;
+  } else if (result.reason === 'session' || result.reason === 'membership') {
+    clearSession();
+    Astro.response.status = result.reason === 'session' ? 401 : 403;
+    notice = result.reason === 'session' ? 'expired' : 'membership';
+  } else {
+    Astro.response.status = 503;
+    notice = 'unavailable';
+  }
+}
+
+const form = editor && submitted ? readProfileForm(submitted) : undefined;
+if (config && token && form) {
+  const validated = validateProfileForm(form);
+  if (!validated.success) {
+    for (const issue of validated.error.issues) invalid.add(issue.path[0] as ProfileField);
+    Astro.response.status = 422;
+  } else {
+    const result = await saveProfile(config, token, validated.data);
+    if (result.ok) return Astro.redirect(`${PROFILE_PATH}?saved=1`, 303);
+    if (result.reason === 'validation') {
+      invalid.add(result.field);
+      Astro.response.status = 422;
+    } else if (result.reason === 'session' || result.reason === 'membership') {
+      clearSession();
+      editor = undefined;
+      Astro.response.status = result.reason === 'session' ? 401 : 403;
+      notice = result.reason === 'session' ? 'expired' : 'membership';
+    } else {
+      Astro.response.status = 503;
+      saveFailed = true;
+    }
+  }
+}
+
+const values = form ?? editor?.profile;
+const saved = !isPost && Astro.url.searchParams.get('saved') === '1';
+const legacyIntent = editor?.profile.intent;
+const notices = {
+  membership: t('profile.membershipRequired'),
+  unavailable: t('profile.unavailable'),
+  expired: t('profile.sessionExpired'),
+  signin: t('profile.signInFailed'),
+};
+const fieldErrors = {
+  displayName: t('profile.errorName'),
+  cityId: t('profile.errorCity'),
+  bio: t('profile.errorBio'),
+  intent: t('profile.errorIntent'),
+  interestIds: t('profile.errorInterests'),
+  discoveryEnabled: t('profile.errorVisibility'),
+  cityVisible: t('profile.errorVisibility'),
+};
+const primaryButton =
+  'inline-flex min-h-11 items-center justify-center rounded-xl bg-[var(--ac-accent)] px-5 py-2 text-sm font-semibold text-white hover:bg-[var(--ac-accent-hover)]';
+const input =
+  'mt-2 w-full rounded-xl border border-[var(--ac-border-strong)] bg-[var(--ac-surface)] px-3 py-2.5 text-base text-[var(--ac-ink)]';
+const check = 'mt-0.5 size-5 shrink-0 accent-[var(--ac-accent)]';
+---
+
+<BaseLayout title={t('profile.title')} noindex={true}>
+  <section class="mx-auto max-w-2xl">
+    <header class="mb-7">
+      <h1 class="text-3xl font-bold tracking-tight sm:text-4xl">{t('profile.title')}</h1>
+      <p class="mt-2 text-[var(--ac-ink-muted)]">
+        {editor ? t('profile.description') : t('profile.signInDescription')}
+      </p>
+    </header>
+    {
+      notice && (
+        <p role="alert" class="mb-5 text-sm font-medium">
+          {notices[notice]}
+        </p>
+      )
+    }
+    {
+      editor && values ? (
+        <>
+          <form
+            method="post"
+            action={PROFILE_PATH}
+            class="space-y-7 rounded-2xl border border-[var(--ac-border)] bg-[var(--ac-surface)] p-5 sm:p-8"
+          >
+            {saved && (
+              <p
+                role="status"
+                class="rounded-xl bg-[var(--ac-accent-soft)] px-4 py-3 text-sm font-medium text-[var(--ac-accent)]"
+              >
+                {t('profile.saved')}
+              </p>
+            )}
+            {(invalid.size > 0 || saveFailed) && (
+              <div role="alert" class="text-sm font-medium">
+                <p>{t(saveFailed ? 'profile.errorSave' : 'profile.errorReview')}</p>
+                {invalid.size > 0 && (
+                  <ul class="mt-2 list-disc space-y-1 pl-5">
+                    {[...invalid].map((field) => (
+                      <li>
+                        <a class="underline underline-offset-2" href={`#${field}`}>
+                          {fieldErrors[field]}
+                        </a>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+            <div class="grid gap-5 sm:grid-cols-2">
+              <div>
+                <label class="text-sm font-semibold" for="displayName">
+                  {t('profile.displayName')}
+                </label>
+                <input
+                  class={input}
+                  id="displayName"
+                  name="displayName"
+                  value={values.displayName}
+                  autocomplete="nickname"
+                  aria-invalid={invalid.has('displayName') || undefined}
+                  required
+                />
+              </div>
+              <div>
+                <label class="text-sm font-semibold" for="cityId">
+                  {t('profile.city')}
+                </label>
+                <select
+                  class={input}
+                  id="cityId"
+                  name="cityId"
+                  aria-invalid={invalid.has('cityId') || undefined}
+                  required
+                >
+                  <option
+                    value=""
+                    disabled
+                    selected={!editor.cities.some((city) => city.id === values.cityId)}
+                  >
+                    {t('profile.selectCity')}
+                  </option>
+                  {editor.cities.map((city) => (
+                    <option value={city.id} selected={city.id === values.cityId}>
+                      {city.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div>
+              <label class="text-sm font-semibold" for="bio">
+                {t('profile.bio')}
+              </label>
+              <p class="mt-1 text-sm text-[var(--ac-ink-muted)]" id="bio-help">
+                {t('profile.bioHelp')}
+              </p>
+              <textarea
+                class={input}
+                id="bio"
+                name="bio"
+                rows="4"
+                aria-describedby="bio-help"
+                aria-invalid={invalid.has('bio') || undefined}
+                set:text={values.bio ?? ''}></textarea>
+            </div>
+            <div>
+              <label class="text-sm font-semibold" for="intent">
+                {t('profile.intent')}
+              </label>
+              <select
+                class={input}
+                id="intent"
+                name="intent"
+                aria-invalid={invalid.has('intent') || undefined}
+              >
+                <option value="" selected={!values.intent}>
+                  {t('profile.intentNone')}
+                </option>
+                {legacyIntent && !PROFILE_INTENTS.some((intent) => intent === legacyIntent) && (
+                  <option value={legacyIntent} selected={values.intent === legacyIntent}>
+                    {legacyIntent}
+                  </option>
+                )}
+                {PROFILE_INTENTS.map((intent) => (
+                  <option value={intent} selected={intent === values.intent}>
+                    {t(`profile.intent.${intent}`)}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <fieldset
+              class="border-t border-[var(--ac-border)] pt-4"
+              id="interestIds"
+              tabindex="-1"
+              aria-invalid={invalid.has('interestIds') || undefined}
+            >
+              <legend class="pr-3 text-base font-semibold">{t('profile.interests')}</legend>
+              <div class="grid gap-x-6 gap-y-1 sm:grid-cols-2">
+                {editor.interests.map((interest) => (
+                  <label class="flex min-h-10 cursor-pointer items-start gap-3 py-2 text-sm">
+                    <input
+                      class={check}
+                      type="checkbox"
+                      name="interestIds"
+                      value={interest.id}
+                      checked={values.interestIds.includes(interest.id)}
+                    />
+                    <span>{interest.name}</span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+            <fieldset class="space-y-4 border-t border-[var(--ac-border)] pt-4">
+              <legend class="pr-3 text-base font-semibold">{t('profile.visibility')}</legend>
+              <label class="flex cursor-pointer items-start gap-3">
+                <input
+                  class={check}
+                  type="checkbox"
+                  id="discoveryEnabled"
+                  name="discoveryEnabled"
+                  checked={values.discoveryEnabled}
+                  aria-describedby="discovery-help"
+                  aria-invalid={invalid.has('discoveryEnabled') || undefined}
+                />
+                <span class="text-sm">
+                  <span class="block font-semibold">{t('profile.discovery')}</span>
+                  <span id="discovery-help" class="mt-1 block text-[var(--ac-ink-muted)]">
+                    {t('profile.discoveryHelp')}
+                  </span>
+                </span>
+              </label>
+              <label class="flex cursor-pointer items-start gap-3">
+                <input
+                  class={check}
+                  type="checkbox"
+                  id="cityVisible"
+                  name="cityVisible"
+                  checked={values.cityVisible}
+                  aria-describedby="city-visibility-help"
+                />
+                <span class="text-sm">
+                  <span class="block font-semibold">{t('profile.cityVisible')}</span>
+                  <span id="city-visibility-help" class="mt-1 block text-[var(--ac-ink-muted)]">
+                    {t('profile.cityVisibleHelp')}
+                  </span>
+                </span>
+              </label>
+            </fieldset>
+            <button type="submit" class={primaryButton}>
+              {t('profile.save')}
+            </button>
+          </form>
+          <a href={`${PROFILE_PATH}/photos`} class="mt-5 inline-flex min-h-11 items-center text-sm font-semibold underline underline-offset-4">
+            {t('photos.manage')}
+          </a>
+          <form method="post" action={PROFILE_PATH} class="mt-4">
+            <button
+              name="action"
+              value="sign-out"
+              class="min-h-11 px-1 text-sm font-semibold underline underline-offset-4 hover:text-[var(--ac-accent)]"
+            >
+              {t('profile.signOut')}
+            </button>
+          </form>
+        </>
+      ) : (
+        config &&
+        notice !== 'unavailable' && (
+          <a class={primaryButton} href={`${PROFILE_AUTH_PATH}?start=1`}>
+            {t('profile.signIn')}
+          </a>
+        )
+      )
+    }
+  </section>
+</BaseLayout>

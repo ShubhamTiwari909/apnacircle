@@ -1,0 +1,199 @@
+---
+import { env } from 'cloudflare:workers';
+import { z } from 'zod';
+import { t } from '@apnacircle/i18n';
+import BaseLayout from '../../../../layouts/BaseLayout.astro';
+import { getPublicApiConfig } from '../../../../lib/meetups.js';
+import { LEGACY_PROFILE_SESSION, PROFILE_PATH, PROFILE_SESSION } from '../../../../lib/profile-editor.js';
+import { fetchSignedProfilePhotoUrls, PROFILE_MEDIA_PATH } from '../../../../lib/profile-photo-links.js';
+
+export const prerender = false;
+
+const token = (Astro.cookies.get(PROFILE_SESSION) ?? Astro.cookies.get(LEGACY_PROFILE_SESSION))?.value;
+if (!token) return Astro.redirect(PROFILE_PATH, 303);
+
+const config = getPublicApiConfig({
+  PUBLIC_SUPABASE_URL: env.PUBLIC_SUPABASE_URL ?? import.meta.env.PUBLIC_SUPABASE_URL,
+  PUBLIC_SUPABASE_ANON_KEY:
+    env.PUBLIC_SUPABASE_ANON_KEY ?? import.meta.env.PUBLIC_SUPABASE_ANON_KEY,
+});
+const photoSchema = z.object({
+  id: z.guid(),
+  sort_order: z.number().int(),
+  visibility: z.enum(['private', 'connections', 'members']),
+  moderation_status: z.enum(['pending', 'approved', 'rejected']),
+  needs_reupload: z.boolean(),
+});
+
+const managerSchema = z.object({
+  maxPhotos: z.number().int().min(1),
+  photos: z.array(photoSchema),
+});
+let manager: z.infer<typeof managerSchema> | undefined;
+if (config) {
+  try {
+    const response = await fetch(`${config.url}/rest/v1/rpc/get_my_profile_photo_manager`, {
+      headers: { apikey: config.anonKey, Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(4000),
+    });
+    if (response.status === 401) return Astro.redirect(PROFILE_PATH, 303);
+    if (response.ok) manager = managerSchema.parse(await response.json());
+  } catch {
+    // Show the retry state if the photo service is unavailable.
+  }
+}
+if (!manager) Astro.response.status = 503;
+const photos = manager?.photos;
+const maxPhotos = manager?.maxPhotos ?? 7;
+
+const endpoint = PROFILE_MEDIA_PATH;
+const thumbnails =
+  config && photos?.length
+    ? await fetchSignedProfilePhotoUrls(
+        config,
+        token,
+        photos.map(({ id }) => id),
+        'thumb',
+      )
+    : new Map<string, string>();
+const messages = {
+  invalid: t('photos.invalid'),
+  size: t('photos.sizeError'),
+  unavailable: t('photos.unavailable'),
+  limit: t('photos.limit', { count: maxPhotos }),
+  session: t('photos.session'),
+  membership: t('photos.membership'),
+  uploading: t('photos.uploading'),
+  removing: t('photos.removing'),
+};
+---
+
+<BaseLayout title={t('photos.title')} noindex={true}>
+  <section class="mx-auto max-w-2xl">
+    <a href={PROFILE_PATH} class="text-sm font-semibold underline underline-offset-4"
+      >{t('photos.back')}</a
+    >
+    <h1 class="mt-4 text-3xl font-bold tracking-tight sm:text-4xl">{t('photos.title')}</h1>
+    <p class="mt-2 text-[var(--ac-ink-muted)]">{t('photos.intro', { count: maxPhotos })}</p>
+
+    {
+      photos ? (
+        <div
+          data-profile-photos
+          data-endpoint={endpoint}
+          data-messages={JSON.stringify(messages)}
+          class="mt-6"
+        >
+          <p data-photo-message class="mb-4 text-sm font-medium" role="status" aria-live="polite">
+            {Astro.url.searchParams.has('uploaded')
+              ? t('photos.uploaded')
+              : Astro.url.searchParams.has('removed')
+                ? t('photos.removed')
+                : ''}
+          </p>
+          {photos.length >= maxPhotos ? (
+            <p class="mb-6 text-sm">{t('photos.limit', { count: maxPhotos })}</p>
+          ) : (
+            <form
+              data-photo-upload
+              method="post"
+              class="space-y-4 rounded-2xl border border-[var(--ac-border)] bg-[var(--ac-surface)] p-5"
+            >
+              <div>
+                <label class="block text-sm font-semibold" for="photo-file">
+                  {t('photos.file')}
+                </label>
+                <input
+                  id="photo-file"
+                  name="photo"
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  required
+                  aria-describedby="photo-help"
+                  class="mt-2 block w-full text-sm"
+                />
+                <p id="photo-help" class="mt-2 text-sm text-[var(--ac-ink-muted)]">
+                  {t('photos.help')}
+                </p>
+              </div>
+              <div>
+                <label class="block text-sm font-semibold" for="photo-visibility">
+                  {t('photos.visibility')}
+                </label>
+                <select
+                  id="photo-visibility"
+                  name="visibility"
+                  class="mt-2 w-full rounded-xl border border-[var(--ac-border-strong)] bg-[var(--ac-surface)] px-3 py-2 text-sm sm:w-auto"
+                >
+                  {(['default', 'private', 'connections', 'members'] as const).map((value) => (
+                    <option value={value}>{t(`photos.visibility.${value}`)}</option>
+                  ))}
+                </select>
+              </div>
+              <button
+                type="submit"
+                disabled
+                class="min-h-11 rounded-xl bg-[var(--ac-accent)] px-5 text-sm font-semibold text-white disabled:opacity-60"
+              >
+                {t('photos.upload')}
+              </button>
+            </form>
+          )}
+          <noscript>
+            <p class="mt-4 text-sm">{t('photos.javascript')}</p>
+          </noscript>
+          {photos.length > 0 && (
+            <ul class="mt-6 grid gap-4 sm:grid-cols-2">
+              {photos.map((photo) => (
+                <li class="flex items-center gap-4 rounded-xl border border-[var(--ac-border)] bg-[var(--ac-surface)] p-4">
+                  {thumbnails.has(photo.id) ? (
+                    <img
+                      src={endpoint + thumbnails.get(photo.id)}
+                      alt=""
+                      width="80"
+                      height="80"
+                      class="size-20 rounded-lg bg-[var(--ac-bg)] object-cover"
+                    />
+                  ) : (
+                    <span
+                      aria-hidden="true"
+                      class="size-20 shrink-0 rounded-lg bg-[var(--ac-bg)]"
+                    />
+                  )}
+                  <div class="min-w-0 text-sm">
+                    <p class="font-semibold">
+                      {photo.sort_order === 0
+                        ? t('photos.primary')
+                        : t('photos.additional', { slot: photo.sort_order })}
+                    </p>
+                    <p class="mt-1">
+                      {t(
+                        photo.needs_reupload
+                          ? 'photos.reupload'
+                          : `photos.status.${photo.moderation_status}`,
+                      )}{' '}
+                      · {t(`photos.visibility.${photo.visibility}`)}
+                    </p>
+                    <button
+                      data-remove-photo={photo.id}
+                      type="button"
+                      disabled
+                      class="mt-1 min-h-10 font-semibold underline underline-offset-4 disabled:opacity-60"
+                    >
+                      {t('photos.remove')}
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      ) : (
+        <p class="mt-6 text-sm" role="alert">
+          {t('photos.unavailable')}
+        </p>
+      )
+    }
+  </section>
+  <script is:inline src="/scripts/profile-photos.js" defer></script>
+</BaseLayout>

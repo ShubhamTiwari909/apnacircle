@@ -108,8 +108,9 @@ serve(async (req) => {
             case 'profile_photo': {
               const { data: photo } = await supabase
                 .from('profile_photos')
-                .select('id, profile_id, storage_path, thumb_path, visibility, moderation_status, phash, sort_order, created_at')
+                .select('id, visibility, moderation_status, sort_order, created_at')
                 .eq('id', body.target_id)
+                .eq('profile_id', userId)
                 .single();
               if (photo) evidenceSnapshot = { photo };
               break;
@@ -135,8 +136,8 @@ serve(async (req) => {
             case 'meetup_attendee': {
               const { data: attendee } = await supabase
                 .from('meetup_attendees')
-                .select('id, meetup_id, user_id, status, created_at')
-                .eq('id', body.target_id)
+                .select('report_target_id, meetup_id, status, created_at')
+                .eq('report_target_id', body.target_id)
                 .single();
               if (attendee) evidenceSnapshot = { attendee };
               break;
@@ -180,6 +181,12 @@ serve(async (req) => {
         .single();
 
       if (reportError) {
+        if (reportError.code === 'P0404') {
+          return new Response(JSON.stringify({ error: 'Report target not found' }), {
+            status: 404,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
         console.error('Report insert error:', reportError);
         return new Response(JSON.stringify({ error: 'Failed to create report' }), {
           status: 500,
@@ -197,7 +204,7 @@ serve(async (req) => {
       }
 
       // Queue notification to moderators
-      await supabase.from('notification_outbox').insert({
+      await supabase.from('notification_outbox').upsert({
         channel: 'email',
         staff_inbox: 'moderators',
         payload: {
@@ -207,7 +214,7 @@ serve(async (req) => {
           category: body.category,
         },
         idempotency_key: `report_${report.id}_moderators`,
-      }, { upsert: true });
+      }, { onConflict: 'idempotency_key', ignoreDuplicates: true });
 
       // Audit log
       await supabase.from('audit_log').insert({

@@ -1,5 +1,6 @@
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.0';
+import { z } from 'npm:zod@4.6.7';
 import { isStaff } from '../_shared/staff.ts';
 
 const corsHeaders = {
@@ -8,13 +9,13 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, GET, PATCH, OPTIONS',
 };
 
-interface ModerationActionRequest {
-  report_id: string;
-  action: 'warning' | 'restriction_7d' | 'suspension' | 'permanent_ban' | 'dismiss' | 'content_removed';
-  reason: string;
-  target_user_id?: string; // For actions against a user
-  ends_at?: string; // For temporary sanctions
-}
+const moderationDecision = z.object({
+  report_id: z.guid(),
+  action: z.enum(['warning', 'restriction_7d', 'suspension', 'permanent_ban', 'dismiss', 'content_removed']),
+  reason: z.string().trim().min(1),
+  target_user_id: z.guid().optional(),
+  ends_at: z.string().optional(),
+});
 
 interface AppealRequest {
   report_id: string;
@@ -135,15 +136,14 @@ serve(async (req) => {
     }
 
     if (req.method === 'POST') {
-      // Take moderation action
-      const body: ModerationActionRequest = await req.json();
-
-      if (!body.report_id || !body.action || !body.reason) {
-        return new Response(JSON.stringify({ error: 'Missing required fields' }), {
+      const decision = moderationDecision.safeParse(await req.json().catch(() => null));
+      if (!decision.success) {
+        return new Response(JSON.stringify({ error: 'Invalid moderation decision' }), {
           status: 400,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
+      const body = decision.data;
 
       // Suspensions and permanent bans (which also record banned identifiers) are admin-only.
       if (
@@ -156,15 +156,7 @@ serve(async (req) => {
         });
       }
 
-      // A sanction needs a well-formed target, and an end date (when given) must be a future time.
-      const isUuid = (v: unknown): v is string =>
-        typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
-      if (body.target_user_id !== undefined && !isUuid(body.target_user_id)) {
-        return new Response(JSON.stringify({ error: 'Invalid target_user_id' }), {
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
-      }
+      // A sanction end date must be a future time.
       if (body.ends_at !== undefined) {
         const endsMs = Date.parse(body.ends_at);
         if (!Number.isFinite(endsMs) || endsMs <= Date.now()) {
@@ -210,7 +202,7 @@ serve(async (req) => {
 
       // Update report status. Conditional on the report still being open, so two moderators acting at
       // the same moment cannot both resolve it (and create duplicate sanctions and notifications).
-      const newStatus = body.action === 'dismiss' ? 'dismissed' : 'resolved';
+      const newStatus = body.action === 'dismiss' ? 'dismissed' : 'action_taken';
       const { data: updatedReports, error: updateError } = await supabase
         .from('reports')
         .update({
@@ -289,7 +281,11 @@ serve(async (req) => {
             if (sanctionLevel === 'suspension' || sanctionLevel === 'permanent_ban') {
               await supabase
                 .from('profiles')
-                .update({ trust_level: 'Restricted', profile_status: sanctionLevel === 'permanent_ban' ? 'banned' : 'suspended' })
+                .update({
+                  trust_level: 'Restricted',
+                  trust_sanction_only: false,
+                  profile_status: sanctionLevel === 'permanent_ban' ? 'banned' : 'suspended',
+                })
                 .eq('id', body.target_user_id);
 
               // Add banned identifiers if permanent ban
@@ -347,12 +343,12 @@ serve(async (req) => {
           entity_id: body.report_id,
         });
 
-        await supabase.from('notification_outbox').insert({
+        await supabase.from('notification_outbox').upsert({
           channel: 'email',
           recipient_id: report.reporter_id,
           payload: { type: 'moderation_outcome', report_id: body.report_id, action: body.action },
           idempotency_key: `mod_outcome_${body.report_id}_${report.reporter_id}`,
-        }, { upsert: true });
+        }, { onConflict: 'idempotency_key', ignoreDuplicates: true });
       }
 
       // Notify target user if action was taken against them
@@ -363,12 +359,12 @@ serve(async (req) => {
           entity_id: body.report_id,
         });
 
-        await supabase.from('notification_outbox').insert({
+        await supabase.from('notification_outbox').upsert({
           channel: 'email',
           recipient_id: body.target_user_id,
           payload: { type: 'moderation_action', report_id: body.report_id, action: body.action, reason: body.reason },
           idempotency_key: `mod_action_${body.report_id}_${body.target_user_id}`,
-        }, { upsert: true });
+        }, { onConflict: 'idempotency_key', ignoreDuplicates: true });
       }
 
       // Audit log
@@ -436,12 +432,12 @@ serve(async (req) => {
           .eq('id', sanction.id);
 
         // Create appeal notification for moderators
-        await supabase.from('notification_outbox').insert({
+        await supabase.from('notification_outbox').upsert({
           channel: 'email',
           staff_inbox: 'moderators',
           payload: { type: 'appeal_submitted', sanction_id: sanction.id, user_id: userId, reason: body.appeal_reason },
           idempotency_key: `appeal_${sanction.id}_moderators`,
-        }, { upsert: true });
+        }, { onConflict: 'idempotency_key', ignoreDuplicates: true });
 
         // Audit log
         await supabase.from('audit_log').insert({

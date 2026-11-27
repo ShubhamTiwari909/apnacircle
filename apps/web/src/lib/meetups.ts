@@ -12,8 +12,7 @@ import {
   type PublicMeetupDetail,
 } from '@apnacircle/types';
 
-// Server-side reads of the public meetup RPCs. The browser never talks to the database; the page
-// is rendered on the Worker with the public (anon) key, which can only call the two public RPCs.
+// Server-side reads use the public (anon) key. The browser never talks to the database.
 
 export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
@@ -33,7 +32,7 @@ export function getPublicApiConfig(env: Record<string, string | undefined>): Pub
 
 export type ApiResult<T> = { ok: true; data: T } | { ok: false };
 
-async function callPublicRpc<T>(
+export async function callPublicRpc<T>(
   config: PublicApiConfig,
   fn: string,
   args: Record<string, unknown>,
