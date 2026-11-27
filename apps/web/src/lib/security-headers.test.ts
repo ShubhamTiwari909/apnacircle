@@ -21,4 +21,20 @@ describe('security headers', () => {
     expect(peopleHeaders['X-Robots-Tag']).toBe('noindex, nofollow');
     expect(peopleHeaders['Cache-Control']).toBe('private, no-store');
   });
+
+  it('matches whole path segments: public pages that merely start with a private prefix stay public', () => {
+    // Regression: `/me` used to match `/meetups`, marking the public meetups page noindex + no-store.
+    for (const path of ['/meetups', '/meetups/some-slug', '/saharanpur/meetups', '/saharanpur/meetups/ride-1', '/settingsfoo', '/people-we-love', '/user']) {
+      expect(isPrivateNoindexPath(path), path).toBe(false);
+      expect(getSecurityHeaders(path)['Cache-Control'], path).toBeUndefined();
+      expect(getSecurityHeaders(path)['X-Robots-Tag'], path).toBeUndefined();
+    }
+  });
+
+  it('covers every members-only route in plan 3.1, including city-scoped people and profiles', () => {
+    for (const path of ['/people', '/saharanpur/people', '/saharanpur/people/page/2', '/u/abc123', '/me', '/me/photos', '/requests', '/notifications', '/settings', '/settings/privacy', '/api/feedback']) {
+      expect(isPrivateNoindexPath(path), path).toBe(true);
+      expect(getSecurityHeaders(path)['Cache-Control'], path).toBe('private, no-store');
+    }
+  });
 });

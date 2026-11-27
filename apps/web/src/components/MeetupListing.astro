@@ -1,0 +1,111 @@
+---
+import { t } from '@apnacircle/i18n';
+import { CATEGORIES, MEETUP_DATE_FILTERS, type PublicMeetup } from '@apnacircle/types';
+import { EmptyStateCard, ErrorStateCard, MeetupCard } from '@apnacircle/ui';
+import { formatMeetupWhen, isFull, spotsLeft } from '../lib/meetups.js';
+
+export interface Props {
+  /** Page the filter form submits to (no query string). */
+  basePath: string;
+  state: 'ok' | 'unavailable';
+  meetups: PublicMeetup[];
+  nextHref: string | null;
+  category: string | null;
+  when: string;
+  /** True when a category or date filter is active (shows the reset link and the no-results wording). */
+  isFiltered: boolean;
+}
+
+const { basePath, state, meetups, nextHref, category, when, isFiltered } = Astro.props;
+
+const whenLabels: Record<(typeof MEETUP_DATE_FILTERS)[number], string> = {
+  any: t('meetups.whenAny'),
+  today: t('meetups.whenToday'),
+  weekend: t('meetups.whenWeekend'),
+  week: t('meetups.whenWeek'),
+};
+---
+
+<form method="get" action={basePath} class="mt-6 flex flex-wrap items-end gap-3" aria-label={t('meetups.filterApply')}>
+  <label class="flex flex-col gap-1 text-sm font-medium text-[var(--ac-ink)]">
+    {t('meetups.filterCategory')}
+    <select
+      name="category"
+      class="min-h-10 rounded-xl border border-[var(--ac-border-strong)] bg-[var(--ac-surface)] px-3 py-2 text-sm"
+    >
+      <option value="" selected={!category}>{t('meetups.filterAnyCategory')}</option>
+      {CATEGORIES.filter((c) => c.kind === 'activity' || c.slug === 'photography-spots').map((c) => (
+        <option value={c.slug} selected={c.slug === category}>{c.name}</option>
+      ))}
+    </select>
+  </label>
+  <label class="flex flex-col gap-1 text-sm font-medium text-[var(--ac-ink)]">
+    {t('meetups.filterWhen')}
+    <select
+      name="when"
+      class="min-h-10 rounded-xl border border-[var(--ac-border-strong)] bg-[var(--ac-surface)] px-3 py-2 text-sm"
+    >
+      {MEETUP_DATE_FILTERS.map((f) => (
+        <option value={f} selected={f === when}>{whenLabels[f]}</option>
+      ))}
+    </select>
+  </label>
+  <button
+    type="submit"
+    class="inline-flex min-h-10 items-center rounded-xl bg-[var(--ac-accent)] px-4 py-2 text-sm font-semibold text-white hover:bg-[var(--ac-accent-hover)]"
+  >
+    {t('meetups.filterApply')}
+  </button>
+  {isFiltered ? (
+    <a href={basePath} class="inline-flex min-h-10 items-center px-2 text-sm font-medium text-[var(--ac-accent)] underline-offset-4 hover:underline">
+      {t('meetups.filterReset')}
+    </a>
+  ) : null}
+</form>
+
+<section class="mt-8" aria-live="polite">
+  {state === 'unavailable' ? (
+    <ErrorStateCard title={t('meetups.unavailableTitle')} description={t('meetups.unavailableBody')} />
+  ) : meetups.length === 0 ? (
+    <EmptyStateCard
+      title={isFiltered ? t('meetups.noResultsTitle') : t('meetups.emptyTitle')}
+      description={isFiltered ? t('meetups.noResultsBody') : t('meetups.emptyBody')}
+      actions={[
+        { href: '/safety', label: t('footer.safetyLink'), variant: 'primary' },
+        { href: '/host-guidelines', label: t('footer.hostLink'), variant: 'secondary' },
+      ]}
+    />
+  ) : (
+    <ul class="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+      {meetups.map((m) => {
+        const full = isFull(m);
+        return (
+          <li>
+            <MeetupCard
+              title={m.title}
+              categoryLabel={m.category_name}
+              venueName={m.venue_name}
+              locality={`${m.locality}, ${m.city_name}`}
+              startsAtLabel={`${formatMeetupWhen(m.starts_at, m.ends_at)} · ${full ? t('meetups.statusFull') : t('meetups.spotsLeft', { count: spotsLeft(m) })}${m.women_only ? ` · ${t('meetups.womenOnlyBadge')}` : ''}`}
+              status={full ? 'full' : 'upcoming'}
+              statusLabel={full ? t('meetups.statusFull') : t('meetups.statusOpen')}
+              href={`/${m.city_slug}/meetups/${m.slug}`}
+            />
+          </li>
+        );
+      })}
+    </ul>
+  )}
+
+  {nextHref ? (
+    <p class="mt-6">
+      <a
+        href={nextHref}
+        rel="next"
+        class="inline-flex min-h-10 items-center rounded-xl border border-[var(--ac-border-strong)] px-4 py-2 text-sm font-semibold text-[var(--ac-ink)] hover:bg-[var(--ac-surface-muted)]"
+      >
+        {t('meetups.nextPage')}
+      </a>
+    </p>
+  ) : null}
+</section>

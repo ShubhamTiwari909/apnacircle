@@ -1,5 +1,6 @@
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.0';
+import { hasMfaSession, staffRole } from '../_shared/staff.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -54,13 +55,8 @@ serve(async (req) => {
     const userId = user.id;
 
     // Check trust level is Restricted (admin)
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('trust_level')
-      .eq('id', userId)
-      .single();
-
-    if (!profile || profile.trust_level !== 'Restricted') {
+    // Staff = app_metadata role (+ MFA session where applicable); trust level plays no part (plan 7.3).
+    if (staffRole(user) === null) {
       return new Response(JSON.stringify({ error: 'Admin access required' }), {
         status: 403,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -68,6 +64,34 @@ serve(async (req) => {
     }
 
     const body: MfaRequest = await req.json();
+
+    // Replacing the TOTP secret or the backup codes of an already-enrolled account must prove the
+    // existing factor first. Otherwise a password-only session could swap in its own authenticator
+    // and defeat the MFA that staff actions depend on.
+    const { data: profile } = await supabase.from('profiles').select('mfa_enabled').eq('id', userId).single();
+    const mfaEnabled = profile?.mfa_enabled === true;
+
+    async function provesExistingFactor(): Promise<boolean> {
+      if (hasMfaSession(authHeader.replace('Bearer ', ''))) return true;
+      if (body.totpCode) {
+        const { data: mfaData } = await supabase
+          .from('mfa_totp_secrets')
+          .select('secret_encrypted')
+          .eq('user_id', userId)
+          .single();
+        if (!mfaData) return false;
+        return verifyTotp(await decryptSecret(mfaData.secret_encrypted), body.totpCode);
+      }
+      if (body.backupCode) return await verifyBackupCode(userId, body.backupCode);
+      return false;
+    }
+
+    if ((body.action === 'enroll' || body.action === 'backup_codes') && mfaEnabled && !(await provesExistingFactor())) {
+      return new Response(JSON.stringify({ error: 'Current TOTP or backup code required' }), {
+        status: 403,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
 
     switch (body.action) {
       case 'enroll': {
@@ -93,14 +117,12 @@ serve(async (req) => {
         // Generate backup codes
         const backupCodes = generateBackupCodes();
 
-        // Store hashed backup codes
-        for (const code of backupCodes) {
-          const hash = await hashCode(code);
-          await supabase.from('mfa_backup_codes').insert({
-            user_id: userId,
-            code_hash: hash,
-          });
-        }
+        // Replace any previous codes with the new set, inserted in one batch.
+        await supabase.from('mfa_backup_codes').delete().eq('user_id', userId);
+        const { error: codesError } = await supabase.from('mfa_backup_codes').insert(
+          await Promise.all(backupCodes.map(async (code) => ({ user_id: userId, code_hash: await hashCode(code) }))),
+        );
+        if (codesError) throw codesError;
 
         return new Response(JSON.stringify({
           ok: true,
@@ -214,20 +236,22 @@ serve(async (req) => {
       }
 
       case 'backup_codes': {
-        // Regenerate backup codes
-        const codes = generateBackupCodes();
-
-        // Delete old backup codes
-        await supabase.from('mfa_backup_codes').delete().eq('user_id', userId);
-
-        // Store new hashed backup codes
-        for (const code of codes) {
-          const hash = await hashCode(code);
-          await supabase.from('mfa_backup_codes').insert({
-            user_id: userId,
-            code_hash: hash,
+        if (!mfaEnabled) {
+          return new Response(JSON.stringify({ error: 'Enable MFA before generating backup codes' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           });
         }
+
+        // Regenerate backup codes (the existing factor was proven above)
+        const codes = generateBackupCodes();
+
+        // Delete old backup codes, then store the new hashed set in one batch
+        await supabase.from('mfa_backup_codes').delete().eq('user_id', userId);
+        const { error: codesError } = await supabase.from('mfa_backup_codes').insert(
+          await Promise.all(codes.map(async (code) => ({ user_id: userId, code_hash: await hashCode(code) }))),
+        );
+        if (codesError) throw codesError;
 
         return new Response(JSON.stringify({ ok: true, backup_codes: codes }), {
           status: 200,

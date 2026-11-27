@@ -1,4 +1,5 @@
-import { defineCollection, z } from 'astro:content';
+import { defineCollection } from 'astro:content';
+import { z } from 'astro/zod';
 import { glob } from 'astro/loaders';
 import {
   articleContentSchema,
@@ -41,7 +42,7 @@ const landingPages = defineCollection({
 
 const policies = defineCollection({
   loader: glob({ pattern: '0[1-8]-*.md', base: '../../apnacircle-policies' }),
-  schema: z.object({}).passthrough(),
+  schema: z.looseObject({}),
 });
 
 export const collections = {

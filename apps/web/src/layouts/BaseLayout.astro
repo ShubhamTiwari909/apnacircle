@@ -8,6 +8,8 @@ export interface Props {
   description?: string;
   noindex?: boolean;
   activeCitySlug?: string;
+  /** Path (no query string) that search engines should treat as the canonical URL. */
+  canonicalPath?: string;
 }
 
 const {
@@ -15,6 +17,7 @@ const {
   description = t('brand.description'),
   noindex = false,
   activeCitySlug = 'saharanpur',
+  canonicalPath,
 } = Astro.props;
 
 const currentPath = Astro.url.pathname;
@@ -39,6 +42,8 @@ const desktopNav = [
     <title>{fullTitle}</title>
     <meta name="description" content={description} />
     {noindex ? <meta name="robots" content="noindex, nofollow" /> : null}
+    {canonicalPath ? <link rel="canonical" href={new URL(canonicalPath, Astro.site ?? Astro.url).href} /> : null}
+    <slot name="head" />
   </head>
   <body class="flex min-h-screen flex-col bg-[var(--ac-bg)] text-[var(--ac-ink)]">
     <a
