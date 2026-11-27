@@ -22,12 +22,12 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@a7487c7e89a18df2991f7f222e4898a00d66ddda # v4.1.0
+        uses: pnpm/action-setup@a7487c7e89a18df4991f7f222e4898a00d66ddda # v4.1.0
 
       - name: Setup Node.js
-        uses: actions/setup-node@cdca7365b2d21bce0a7770f6561e267f78d0e002 # v4.3.0
+        uses: actions/setup-node@cdca7365b2dadb8aad0a33bc7601856ffabcc48e # v4.3.0
         with:
-          node-version: 22
+          node-version: 24
           cache: pnpm
 
       - name: Install dependencies
@@ -54,6 +54,19 @@ jobs:
             echo "ERROR: Potential secret identifier leaked into build output"
             exit 1
           fi
+
+  database:
+    name: Database tests (migrations, access rules, concurrency)
+    # Pinned: test-db.sh looks for the Postgres 16/17 that this image ships; `ubuntu-latest` can change under us.
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Starts a throwaway PostgreSQL (preinstalled on the runner), applies every migration that
+      # works on plain Postgres, then runs supabase/tests/p4 including parallel-join capacity tests.
+      - name: Run database tests
+        run: bash scripts/test-db.sh
 
   gitleaks:
     name: Secret Scan (Gitleaks)

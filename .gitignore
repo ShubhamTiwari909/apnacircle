@@ -20,3 +20,8 @@ apnacircle-policies/filled/
 .DS_Store
 *.log
 *.tsbuildinfo
+
+# Supabase CLI local state and generated local secrets
+supabase/.temp/
+supabase/.branches/
+supabase/.env

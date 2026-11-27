@@ -1,5 +1,6 @@
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.0';
+import { isStaff } from '../_shared/staff.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -13,14 +14,6 @@ interface ReportRequest {
   category: 'spam' | 'harassment' | 'impersonation' | 'unsafe_meetup' | 'scam' | 'suspected_minor' | 'non_consensual_intimate_imagery' | 'threats' | 'inappropriate_content' | 'other';
   description: string;
   evidence_snapshot?: Record<string, unknown>;
-}
-
-interface ReportListRequest {
-  status?: 'open' | 'in_review' | 'resolved' | 'dismissed';
-  priority?: 'P0' | 'P1' | 'P2';
-  target_type?: string;
-  limit?: number;
-  offset?: number;
 }
 
 serve(async (req) => {
@@ -206,7 +199,7 @@ serve(async (req) => {
       // Queue notification to moderators
       await supabase.from('notification_outbox').insert({
         channel: 'email',
-        recipient_id: 'moderators', // Special handling in processor
+        staff_inbox: 'moderators',
         payload: {
           type: 'new_report',
           report_id: report.id,
@@ -237,13 +230,8 @@ serve(async (req) => {
 
     if (req.method === 'GET') {
       // List reports - moderators only
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('trust_level')
-        .eq('id', userId)
-        .single();
-
-      if (!profile || profile.trust_level !== 'Restricted') {
+      // Staff = app_metadata role (+ MFA session where applicable); trust level plays no part (plan 7.3).
+    if (!isStaff(user, authHeader.replace('Bearer ', ''))) {
         return new Response(JSON.stringify({ error: 'Forbidden' }), {
           status: 403,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },

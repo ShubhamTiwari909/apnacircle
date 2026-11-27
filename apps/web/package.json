@@ -6,29 +6,29 @@
   "scripts": {
     "dev": "ASTRO_TELEMETRY_DISABLED=1 astro dev",
     "build": "ASTRO_TELEMETRY_DISABLED=1 astro check && ASTRO_TELEMETRY_DISABLED=1 astro build",
-    "preview": "wrangler dev",
+    "preview": "astro preview",
     "typecheck": "ASTRO_TELEMETRY_DISABLED=1 astro check && tsc --noEmit"
   },
   "dependencies": {
     "@apnacircle/i18n": "workspace:*",
     "@apnacircle/types": "workspace:*",
     "@apnacircle/ui": "workspace:*",
-    "@astrojs/cloudflare": "^12.5.0",
-    "@astrojs/react": "^4.2.1",
+    "@astrojs/cloudflare": "^14.4.9",
+    "@astrojs/react": "^7.1.9",
     "@tailwindcss/vite": "^4.0.14",
     "@zentauri-ui/zentauri-components": "^2.18.0",
-    "astro": "^5.5.2",
+    "astro": "^7.4.13",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-icons": "^5.5.0",
     "tailwindcss": "^4.0.14",
-    "zod": "^3.24.2"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@astrojs/check": "^0.9.4",
-    "@cloudflare/workers-types": "^4.20250320.0",
+    "@astrojs/check": "^0.9.12",
+    "@cloudflare/workers-types": "^5.20261127.1",
     "@types/react": "^19.1.2",
     "@types/react-dom": "^19.1.2",
-    "wrangler": "^4.4.0"
+    "wrangler": "^4.168.0"
   }
 }

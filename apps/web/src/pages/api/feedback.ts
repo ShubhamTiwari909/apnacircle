@@ -1,4 +1,5 @@
 import type { APIRoute } from 'astro';
+import { flattenError } from 'zod';
 import { feedbackSubmissionSchema } from '@apnacircle/types';
 import { isAllowedOrigin } from '../../lib/origin.js';
 import { feedbackRateLimiter, SlidingWindowRateLimiter } from '../../lib/rate-limit.js';
@@ -52,7 +53,7 @@ export async function handleFeedbackPost(
     return Response.json(
       {
         error: 'validation_failed',
-        issues: parsed.error.flatten().fieldErrors,
+        issues: flattenError(parsed.error).fieldErrors,
       },
       { status: 400 },
     );
@@ -87,11 +88,11 @@ export async function handleFeedbackPost(
   return Response.json({ ok: true, referenceId }, { status: 201 });
 }
 
-export const POST: APIRoute = async ({ request, url, locals }) => {
-  const runtimeEnv = locals.runtime?.env;
+export const POST: APIRoute = async ({ request, url }) => {
+  const { env: runtimeEnv } = await import('cloudflare:workers');
   const turnstileSecret =
-    runtimeEnv?.TURNSTILE_SECRET_KEY ?? import.meta.env.TURNSTILE_SECRET_KEY;
-  const siteUrl = runtimeEnv?.PUBLIC_SITE_URL ?? import.meta.env.PUBLIC_SITE_URL;
+    runtimeEnv.TURNSTILE_SECRET_KEY ?? import.meta.env.TURNSTILE_SECRET_KEY;
+  const siteUrl = runtimeEnv.PUBLIC_SITE_URL ?? import.meta.env.PUBLIC_SITE_URL;
 
   return handleFeedbackPost(request, url, {
     ...(turnstileSecret ? { turnstileSecret } : {}),

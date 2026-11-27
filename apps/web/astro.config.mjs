@@ -5,9 +5,9 @@ import tailwindcss from '@tailwindcss/vite';
 
 export default defineConfig({
   site: process.env.PUBLIC_SITE_URL || 'https://apnacircle.example',
-  output: 'static',
   adapter: cloudflare({
     imageService: 'compile',
+    prerenderEnvironment: 'node',
   }),
   integrations: [react()],
   vite: {
