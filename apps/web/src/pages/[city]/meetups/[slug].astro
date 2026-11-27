@@ -23,7 +23,10 @@ if (!cityMeta || !/^[a-z0-9-]{1,80}$/.test(slug)) {
   return Astro.rewrite('/404');
 }
 
-const config = getPublicApiConfig({ ...import.meta.env, ...env });
+const config = getPublicApiConfig({
+  PUBLIC_SUPABASE_URL: env.PUBLIC_SUPABASE_URL ?? import.meta.env.PUBLIC_SUPABASE_URL,
+  PUBLIC_SUPABASE_ANON_KEY: env.PUBLIC_SUPABASE_ANON_KEY ?? import.meta.env.PUBLIC_SUPABASE_ANON_KEY,
+});
 const result = config ? await getPublicMeetup(config, cityMeta.slug, slug) : ({ ok: false } as const);
 
 if (result.ok && result.data === null) {
