@@ -4,12 +4,21 @@ export const PRIVATE_NOINDEX_PREFIXES = [
   '/requests',
   '/notifications',
   '/settings',
-  '/api/',
+  '/u',
+  '/api',
 ] as const;
 
+// Members-only city routes such as /saharanpur/people (plan 3.1).
+const CITY_PEOPLE_ROUTE = /^\/[a-z0-9-]+\/people(\/|$)/;
+
+/**
+ * Members-only and API routes: noindex and never cached by shared caches.
+ * Matching is on whole path segments, so `/me` covers `/me/settings` but not the public `/meetups`.
+ */
 export function isPrivateNoindexPath(pathname: string): boolean {
-  return PRIVATE_NOINDEX_PREFIXES.some(
-    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`) || pathname.startsWith(prefix),
+  return (
+    PRIVATE_NOINDEX_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`)) ||
+    CITY_PEOPLE_ROUTE.test(pathname)
   );
 }
 
