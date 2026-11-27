@@ -1,0 +1,19 @@
+# EXAMPLE fact pack (seed/demo data). Facts come from the reviewed seed place pages in content/places/.
+# Replace with your own verified facts and real source links before drafting for publication.
+city: saharanpur
+contentType: article
+topic: Public parks in Saharanpur for weekend meetups
+categorySlug: weekend-activities
+facts:
+  - id: company-garden-open
+    text: Company Garden is a public garden in Saharanpur suited to relaxed daytime group walks.
+    source: content/places/company-garden-saharanpur.md
+    verifiedOn: "2026-11-26"
+  - id: ambedkar-park-open
+    text: Ambedkar Park is a spacious open public park where weekend morning meetups are practical.
+    source: content/places/ambedkar-park-saharanpur.md
+    verifiedOn: "2026-11-26"
+  - id: gandhi-park-open
+    text: Gandhi Park is a public park in Saharanpur City.
+    source: content/places/gandhi-park-saharanpur.md
+    verifiedOn: "2026-11-26"

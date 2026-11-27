@@ -1,0 +1,20 @@
+{
+  "name": "@apnacircle/content-studio",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "draft": "tsx src/cli.ts draft",
+    "gate": "tsx src/cli.ts gate",
+    "isolation": "tsx src/cli.ts isolation"
+  },
+  "dependencies": {
+    "@apnacircle/types": "workspace:*",
+    "yaml": "^2.8.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "tsx": "^4.22.0"
+  }
+}

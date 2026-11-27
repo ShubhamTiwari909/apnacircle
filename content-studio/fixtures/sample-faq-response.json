@@ -1,0 +1,9 @@
+{
+  "slug": "saharanpur-where-do-meetups-happen",
+  "question": "Where do ApnaCircle meetups happen in Saharanpur?",
+  "answer": "ApnaCircle meetups happen at public venues such as parks and cafes. In an emergency in India, dial 112.",
+  "claims": [
+    { "text": "ApnaCircle meetups happen at public venues only.", "tag": "fact_pack", "source": "meetups-public" },
+    { "text": "The all-India emergency number is 112.", "tag": "fact_pack", "source": "emergency-number" }
+  ]
+}

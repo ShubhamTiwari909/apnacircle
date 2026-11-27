@@ -55,9 +55,42 @@ jobs:
             exit 1
           fi
 
+      # Browsing must never trigger an AI call: no Gemini host, key name or SDK in the Worker and
+      # client bundles (apps/web/dist), site source, shared packages or Edge Functions.
+      - name: AI isolation scan
+        run: pnpm --filter @apnacircle/content-studio run isolation
+
+  content-gate:
+    name: Content gate (claims and review fields)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout full history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@a7487c7e89a18df4991f7f222e4898a00d66ddda # v4.1.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@cdca7365b2dadb8aad0a33bc7601856ffabcc48e # v4.3.0
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      # Fails while any changed content file has an unverified claim, a PENDING placeholder in a
+      # review field, missing image rights, or no first-hand local note.
+      - name: Run content gate
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: pnpm --filter @apnacircle/content-studio run gate --base "origin/$BASE_REF"
+
   database:
     name: Database tests (migrations, access rules, concurrency)
-    # Pinned: test-db.sh looks for the Postgres 16/17 that this image ships; `ubuntu-latest` can change under us.
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout

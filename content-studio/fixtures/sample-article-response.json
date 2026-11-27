@@ -1,0 +1,38 @@
+{
+  "title": "Public Parks in Saharanpur for Weekend Meetups",
+  "slug": "saharanpur-public-parks-weekend-meetups",
+  "description": "A short guide to three public parks in Saharanpur that suit small, daytime weekend meetups and group walks.",
+  "summary": "Saharanpur has several public green spaces where a small group can meet in daylight. This guide covers three of them and how to plan around them.",
+  "sections": [
+    {
+      "heading": "Company Garden",
+      "body": "Company Garden is a public garden in Saharanpur that suits relaxed daytime group walks. Pick a clear landmark inside the garden as your meeting point and share it with the group."
+    },
+    {
+      "heading": "Ambedkar Park",
+      "body": "Ambedkar Park is a spacious open public park, which makes weekend morning meetups practical. Open space means a group can spread out and still stay in sight of each other."
+    },
+    {
+      "heading": "Gandhi Park",
+      "body": "Gandhi Park is a public park in Saharanpur City. Check the current gate timings locally before you invite people, since opening hours can change."
+    },
+    {
+      "heading": "Planning a safe first meetup",
+      "body": "Meet in daylight, tell someone where you are going, and keep the first group small.\n\n- Share the general venue publicly\n- Agree on a time to finish\n- Use the in-app report or block tools if something feels wrong"
+    }
+  ],
+  "faqs": [
+    {
+      "question": "Are these parks free to enter?",
+      "answer": "Entry rules can change, so check at the gate or with the park office before you plan a group visit."
+    }
+  ],
+  "seoKeywords": ["saharanpur parks", "weekend meetups saharanpur"],
+  "claims": [
+    { "text": "Company Garden is a public garden suited to relaxed daytime group walks.", "tag": "fact_pack", "source": "company-garden-open" },
+    { "text": "Ambedkar Park is a spacious open public park suited to weekend morning meetups.", "tag": "fact_pack", "source": "ambedkar-park-open" },
+    { "text": "Gandhi Park is a public park in Saharanpur City.", "tag": "fact_pack", "source": "gandhi-park-open" },
+    { "text": "Meeting in daylight and telling someone your plans is sensible safety practice.", "tag": "general_knowledge" },
+    { "text": "Opening hours at the parks can change.", "tag": "unverified" }
+  ]
+}

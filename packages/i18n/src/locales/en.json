@@ -76,6 +76,7 @@
   "article.byline": "Reviewed by {reviewer}",
   "article.verifiedOn": "Last verified {date}",
   "article.firstHandLabel": "First-hand verification note",
+  "article.aiDisclosure": "Drafted with AI assistance and reviewed by {reviewer}",
   "people.pageTitle": "Members Directory",
   "people.noindexNotice": "Private to signed-in members",
   "people.teaserTitle": "Member profiles are never visible when signed out",
