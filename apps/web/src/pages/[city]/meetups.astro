@@ -20,7 +20,10 @@ const query = parseListingQuery(
   cityMeta.slug,
   CATEGORIES.map((c) => c.slug),
 );
-const config = getPublicApiConfig({ ...import.meta.env, ...env });
+const config = getPublicApiConfig({
+  PUBLIC_SUPABASE_URL: env.PUBLIC_SUPABASE_URL ?? import.meta.env.PUBLIC_SUPABASE_URL,
+  PUBLIC_SUPABASE_ANON_KEY: env.PUBLIC_SUPABASE_ANON_KEY ?? import.meta.env.PUBLIC_SUPABASE_ANON_KEY,
+});
 const result = config ? await listPublicMeetups(config, query) : ({ ok: false } as const);
 
 // Never cache or index an outage: 503 + no-store. Healthy pages are shared-cached for 60 seconds (plan 7.5).
