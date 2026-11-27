@@ -53,7 +53,7 @@ serve(async (req) => {
       .eq('id', userId)
       .single();
 
-    const isModerator = profile && ['moderator', 'admin', 'Restricted'].includes(profile.trust_level);
+    const isModerator = profile && profile.trust_level === 'Restricted';
 
     if (req.method === 'POST') {
       const body: PhotoHashCheckRequest = await req.json();

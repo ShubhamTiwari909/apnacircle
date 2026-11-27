@@ -211,8 +211,8 @@ serve(async (req) => {
         .eq('id', userId)
         .single();
 
-      // Only Grievance Officer or admin can update
-      if (!profile || !['grievance_officer', 'admin', 'Restricted'].includes(profile.trust_level)) {
+      // Only Grievance Officer or admin can update (Restricted trust_level)
+      if (!profile || profile.trust_level !== 'Restricted') {
         return new Response(JSON.stringify({ error: 'Forbidden: Grievance Officer role required' }), {
           status: 403,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },

@@ -243,7 +243,7 @@ serve(async (req) => {
         .eq('id', userId)
         .single();
 
-      if (!profile || !['moderator', 'admin', 'Restricted'].includes(profile.trust_level)) {
+      if (!profile || profile.trust_level !== 'Restricted') {
         return new Response(JSON.stringify({ error: 'Forbidden' }), {
           status: 403,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },

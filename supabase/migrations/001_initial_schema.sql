@@ -781,19 +781,9 @@ grant select on public.meetup_attendee_view to authenticated;
 -- COLUMN PRIVILEGES (revoke by default, grant per column)
 -- =============================================================================
 
--- Revoke all column privileges from anon and authenticated
-do $$
-declare
-  r record;
-begin
-  for r in
-    select table_schema, table_name, column_name
-    from information_schema.columns
-    where table_schema = 'public'
-  loop
-    execute format('revoke all on %I.%I(%I) from anon, authenticated;', r.table_schema, r.table_name, r.column_name);
-  end loop;
-end $$;
+-- Revoke all privileges from anon and authenticated on public tables
+-- (this revokes table-level privileges; column-level grants will override)
+revoke all on all tables in schema public from anon, authenticated;
 
 -- Grant select on safe columns for public tables
 grant select (id, slug, name, state, country, active, rollout_order, timezone, created_at) on public.cities to anon, authenticated;
@@ -820,7 +810,7 @@ as $$
 declare
   v_limit int;
   v_current int;
-  v_level trust_level;
+  v_level public.trust_level;
   v_usage_date date := (now() at time zone 'Asia/Kolkata')::date;
 begin
   -- Get user's trust level
@@ -1167,7 +1157,7 @@ $$;
 
 -- Function: compute trust level
 create or replace function public.compute_trust_level(p_user_id uuid)
-returns trust_level
+returns public.trust_level
 language plpgsql
 security invoker
 set search_path = ''
@@ -1239,7 +1229,7 @@ as $$
 declare
   v_count int := 0;
   v_profile record;
-  v_new_level trust_level;
+  v_new_level public.trust_level;
 begin
   for v_profile in
     select id, trust_level from public.profiles
@@ -1289,7 +1279,7 @@ as $$
 declare
   v_report_id uuid;
   v_reporter_id uuid := auth.uid();
-  v_priority report_priority;
+  v_priority public.report_priority;
   v_sla_due timestamptz;
 begin
   -- Determine priority and SLA
