@@ -17,6 +17,7 @@ select t.u(n + 100), t.u(n), 'display-' || n, 'thumb-' || n,
   case when n = 822 then 'near' end
 from generate_series(811, 825) n;
 
+select t.make_host(2);
 select t.make_meetup(2, 'Trust fixture meetup', 10, 'auto', false, now()) as meetup \gset
 insert into public.meetup_attendees (meetup_id, user_id, status, checked_in_at)
 values
@@ -92,6 +93,27 @@ select t.ok(public.compute_trust_level(t.u(811)) = 'L1', 'reporter-supplied evid
 update public.reports set status = 'appealed' where id = t.u(852);
 select t.ok(public.compute_trust_level(t.u(818)) = 'L0', 'filing an appeal does not overturn an upheld decision');
 update public.reports set status = 'dismissed' where id = t.u(852);
+
+-- The member view issues a separate report target, and the attribution survives RSVP deletion.
+select t.as_user(t.u(815));
+select item ->> 'report_target_id' as attendee_report_target
+from public.get_meetup_member_view(:'meetup') v
+cross join jsonb_array_elements(v.attendees) item
+where item ->> 'display_name' = 'Trust fixture 814' \gset
+reset role;
+select t.ok(:'attendee_report_target'::uuid <> t.u(814), 'attendee reporting uses an opaque target instead of the member UUID');
+select t.throws($$
+  insert into public.reports (target_type, target_id, category, sla_due_at)
+  values ('meetup_attendee', t.u(814), 'harassment', now())
+$$, 'P0404', 'a member UUID cannot stand in for an attendee target');
+insert into public.reports (id, reporter_id, target_type, target_id, category, sla_due_at, evidence_snapshot)
+values (t.u(853), t.u(815), 'meetup_attendee', :'attendee_report_target', 'harassment', now(),
+  jsonb_build_object('user_id', t.u(815)));
+select t.ok(public.compute_trust_level(t.u(814)) = 'L1', 'filing an attendee report does not itself alter trust');
+delete from public.meetup_attendees where report_target_id = :'attendee_report_target';
+update public.reports set status = 'action_taken' where id = t.u(853);
+select t.ok(public.compute_trust_level(t.u(814)) = 'L0', 'upheld attendee report counts against the reported member after RSVP removal');
+select t.ok(public.compute_trust_level(t.u(815)) = 'L2', 'reporter-supplied attendee evidence cannot redirect trust attribution');
 
 insert into public.user_sanctions (user_id, level, reason, starts_at, ends_at, appeal_status)
 values (t.u(820), 'restriction_7d', 'Timed moderation action', now() - interval '1 day', now() + interval '6 days', 'none');

@@ -4,6 +4,53 @@ alter table public.profiles add column trust_sanction_only boolean not null defa
 -- The moderation endpoint creates sanctions before any appeal has been submitted.
 alter type public.appeal_status add value if not exists 'none';
 
+-- Attendee rows keep their composite key. Give reports a separate opaque target that is
+-- only issued through the existing authorized meetup member view.
+alter table public.meetup_attendees
+  add column report_target_id uuid not null default gen_random_uuid() unique;
+
+create or replace function public.get_meetup_member_view(p_meetup_id uuid)
+returns table (spot_note text, is_host boolean, my_status public.attendee_status, attendees jsonb)
+language plpgsql stable security definer
+set search_path = ''
+as $$
+declare
+  v_uid uuid := auth.uid();
+  v_m public.meetups;
+  v_my public.attendee_status;
+begin
+  if v_uid is null then
+    raise exception 'Sign in required' using errcode = 'P0401';
+  end if;
+  select * into v_m from public.meetups where id = p_meetup_id and status in ('published', 'completed');
+  if not found then
+    raise exception 'Meetup not found' using errcode = 'P0404';
+  end if;
+  select a.status into v_my from public.meetup_attendees a where a.meetup_id = p_meetup_id and a.user_id = v_uid;
+  if v_m.host_id <> v_uid and (
+    coalesce(v_my::text, '') not in ('approved', 'attended')
+    or app_private.join_blocker(v_uid, v_m) is not null
+  ) then
+    raise exception 'Meetup not found' using errcode = 'P0404';
+  end if;
+
+  return query
+  select v_m.spot_note,
+         v_m.host_id = v_uid,
+         v_my,
+         coalesce((
+           select jsonb_agg(jsonb_build_object('public_id', p.public_id, 'display_name', p.display_name,
+                                              'status', a.status, 'report_target_id', a.report_target_id, 'user_id', case when v_m.host_id = v_uid then a.user_id end)
+                            order by a.created_at)
+             from public.meetup_attendees a
+             join public.profiles p on p.id = a.user_id and p.profile_status = 'active'
+            where a.meetup_id = p_meetup_id
+              and (a.status in ('approved', 'attended') or (v_m.host_id = v_uid and a.status = 'requested'))
+              and not app_private.is_blocked_pair(v_uid, a.user_id)
+         ), '[]'::jsonb);
+end;
+$$;
+
 -- Attribute reports using server-owned rows even if the reported photo, meetup, or request
 -- is later removed. Reporter-supplied evidence cannot identify the member for trust decisions.
 create table app_private.trust_report_subjects (
@@ -29,6 +76,7 @@ language sql stable set search_path = '' as $$
     when 'profile' then (select p.id from public.profiles p where p.id = p_id)
     when 'profile_photo' then (select p.profile_id from public.profile_photos p where p.id = p_id)
     when 'meetup' then (select m.host_id from public.meetups m where m.id = p_id)
+    when 'meetup_attendee' then (select a.user_id from public.meetup_attendees a where a.report_target_id = p_id)
     when 'connection_request' then (select r.sender_id from public.connection_requests r where r.id = p_id)
     when 'feedback' then (select f.user_id from public.feedback f where f.id = p_id)
   end
@@ -54,6 +102,9 @@ begin
   end if;
 
   v_member := app_private.trust_report_member(new.target_type, new.target_id);
+  if tg_op = 'INSERT' and new.target_type = 'meetup_attendee' and v_member is null then
+    raise exception 'Meetup attendee not found' using errcode = 'P0404';
+  end if;
   if v_member is not null then
     insert into app_private.trust_report_subjects (report_id, member_id)
     values (new.id, v_member) on conflict (report_id) do nothing;

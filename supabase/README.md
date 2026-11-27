@@ -106,7 +106,7 @@ they have authorized access to their profile or directory results.
 
 ## Trust levels
 
-Apply migration 012 and redeploy the `moderation` Edge Function. The migration recalculates existing
+Apply migration 012 and redeploy the `moderation` and `reports` Edge Functions. The migration recalculates existing
 tiers and replaces the nightly trust job with a direct PostgreSQL call at 03:00 UTC. Trusted backend
 jobs can call `compute_trust_level` for a current single-member result or `update_trust_levels` to refresh
 stored tiers.
@@ -122,6 +122,8 @@ stored tiers.
 - Trust decisions are attributed using server-owned report targets. Pending appeals retain existing
   decisions, and dismissal clears them. Historical upheld reports use their update timestamp when
   backfilled. Reports whose subject cannot be resolved are left unattributed.
+- For attendee reports, send the attendee's `report_target_id` from the authorized meetup
+  member view as the report's `target_id`. Trust attribution survives removal of the RSVP.
 
 ## City directory unlock
 

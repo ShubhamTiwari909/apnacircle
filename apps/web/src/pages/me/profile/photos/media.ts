@@ -53,6 +53,7 @@ const handler: APIRoute = async ({ request, url, cookies }) => {
     return new Response(response.body, {
       status: response.status,
       headers: {
+        'Cache-Control': 'private, no-store',
         'Cross-Origin-Resource-Policy': 'same-origin',
         'Content-Type': response.ok && request.method === 'GET' ? 'image/jpeg' : 'application/json',
       },
