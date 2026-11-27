@@ -80,7 +80,6 @@ const listPath = `/${cityMeta.slug}/meetups`;
       {cancelled ? (
         <div role="alert" class="mt-6 rounded-2xl border border-[var(--ac-danger)]/30 bg-[var(--ac-danger-soft)] p-5 text-[var(--ac-danger)]">
           <p class="font-semibold">{t('meetups.detail.cancelledTitle')}</p>
-          {meetup.cancel_reason ? <p class="mt-1 text-sm">{t('meetups.detail.cancelledReason', { reason: meetup.cancel_reason })}</p> : null}
         </div>
       ) : null}
 

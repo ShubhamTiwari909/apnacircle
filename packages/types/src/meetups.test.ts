@@ -33,7 +33,7 @@ describe('public meetup schemas', () => {
     expect(publicMeetupSchema.safeParse(base).success).toBe(true);
     expect(publicMeetupSchema.safeParse({ ...base, capacity: 0 }).success).toBe(false);
     expect(publicMeetupSchema.safeParse({ ...base, starts_at: 'tomorrow' }).success).toBe(false);
-    expect(publicMeetupDetailSchema.safeParse({ ...base, status: 'draft', cancel_reason: null }).success).toBe(false);
+    expect(publicMeetupDetailSchema.safeParse({ ...base, status: 'draft' }).success).toBe(false);
   });
 
   it('does not model private fields, so they can never be rendered from this shape', () => {

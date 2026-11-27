@@ -4,11 +4,16 @@
 # 1. Starts a throwaway PostgreSQL cluster (or uses TEST_DB_ADMIN_URL if you provide a server,
 #    e.g. the Postgres service container in CI).
 # 2. Applies Supabase stand-ins, then every migration that works on plain Postgres
-#    (pg_cron / pg_net scheduling migrations are skipped; they need Supabase).
+#    (004 is skipped because it installs the pg_cron extension; the stubs stand in for pg_cron and
+#    pg_net so 005 and 008, and the privileges they set, are exercised).
 # 3. Runs supabase/tests/p4/*.sql (plain SQL assertions) and concurrency tests.
 # 4. Runs the legacy pgTAP suites only if the pgtap extension is installed.
 #
-# Usage:  pnpm test:db            (KEEP_TEST_DB=1 keeps the cluster running for inspection)
+# Usage:  pnpm test:db            (KEEP_TEST_DB=1 keeps the cluster / test database for inspection)
+#
+#   TEST_DB_ADMIN_URL   A server you control, as a libpq key=value string ("host=... user=...") or a
+#                       postgres:// URI. A uniquely named test database is created and dropped.
+#   REQUIRE_PGTAP=1     Fail (instead of skipping) when the pgtap extension is not installed.
 set -euo pipefail
 
 # Postgres refuses to start under a broken/unset locale (seen on macOS terminals and slim CI images).
@@ -53,9 +58,29 @@ else
 fi
 
 PSQL="$PGBIN/psql"
-DB="apnacircle_test_$$"
-"$PSQL" "$ADMIN_CONN dbname=postgres" -v ON_ERROR_STOP=1 -q -c "create database $DB" >/dev/null
-CONN="$ADMIN_CONN dbname=$DB"
+DB="apnacircle_test_$$_${RANDOM}"
+
+# Connection string for database $1 on the admin server. Works for key=value strings and for
+# postgres:// URIs (appending " dbname=x" to a URI is invalid).
+conn_for() {
+  case "$ADMIN_CONN" in
+    postgres://*|postgresql://*)
+      python3 -I -c 'import sys, urllib.parse as u
+p = u.urlsplit(sys.argv[1]); print(u.urlunsplit(p._replace(path="/" + sys.argv[2])))' "$ADMIN_CONN" "$1" ;;
+    *) echo "$ADMIN_CONN dbname=$1" ;;
+  esac
+}
+
+"$PSQL" "$(conn_for postgres)" -v ON_ERROR_STOP=1 -q -c "create database $DB" >/dev/null
+CONN="$(conn_for "$DB")"
+if [ "$STARTED_CLUSTER" -eq 0 ]; then
+  # An external server outlives this script, so drop our database when we are done.
+  drop_test_db() {
+    if [ "${KEEP_TEST_DB:-0}" = "1" ]; then echo "[test:db] database kept: $DB"; return; fi
+    "$PSQL" "$(conn_for postgres)" -X -q -c "drop database if exists $DB with (force)" >/dev/null 2>&1 || true
+  }
+  trap drop_test_db EXIT
+fi
 export TEST_DB_CONN="$CONN" TEST_DB_PSQL="$PSQL"
 
 run_sql() { "$PSQL" "$CONN" -v ON_ERROR_STOP=1 -q -X -f "$1" >/dev/null; }
@@ -64,7 +89,8 @@ echo "[test:db] applying Supabase stand-ins and migrations"
 run_sql "$SQL_DIR/tests/_supabase_stubs.sql"
 for m in "${MIGRATIONS_DIR:-$SQL_DIR/migrations}"/*.sql; do
   case "$(basename "$m")" in
-    004_cron_jobs.sql|005_cron_trigger.sql|008_phase4_cron.sql) echo "  skip $(basename "$m") (needs pg_cron/pg_net)"; continue ;;
+    # `create extension pg_cron` is not available on plain Postgres; the stubs provide the cron and net schemas.
+    004_cron_jobs.sql) echo "  skip $(basename "$m") (creates the pg_cron extension)"; continue ;;
   esac
   echo "  apply $(basename "$m")"
   # One transaction per migration, like the Supabase CLI, so ordering problems (for example using
@@ -88,10 +114,18 @@ done
 if "$PSQL" "$CONN" -X -q -c "create extension if not exists pgtap" >/dev/null 2>&1; then
   for t in "$SQL_DIR/tests/rls_tests.sql" "$SQL_DIR/tests/phase3_tests.sql"; do
     echo "[test:db] (pgTAP) $(basename "$t")"
-    if ! "$PSQL" "$CONN" -X -q -f "$t" 2>&1 | sed 's/^/    /'; then FAILED=1; fi
+    # pgTAP reports failures as "not ok" lines and exits 0, so psql's status alone is not enough.
+    PGTAP_OUT="$(mktemp "${TMPDIR:-/tmp}/apnacircle-pgtap.XXXXXX")"
+    if ! "$PSQL" "$CONN" -v ON_ERROR_STOP=1 -X -q -f "$t" >"$PGTAP_OUT" 2>&1; then FAILED=1; fi
+    sed 's/^/    /' "$PGTAP_OUT"
+    if grep -Eq '^[[:space:]]*not ok|Looks like you (failed|planned)' "$PGTAP_OUT"; then FAILED=1; fi
+    rm -f "$PGTAP_OUT"
   done
+elif [ "${REQUIRE_PGTAP:-0}" = "1" ]; then
+  echo "[test:db] pgTAP is required (REQUIRE_PGTAP=1) but the extension is not installed"
+  FAILED=1
 else
-  echo "[test:db] pgTAP not installed: skipping legacy rls_tests.sql and phase3_tests.sql (NOT verified here)"
+  echo "[test:db] pgTAP not installed: skipping legacy rls_tests.sql and phase3_tests.sql (NOT verified here; set REQUIRE_PGTAP=1 to fail instead)"
 fi
 
 if [ "$FAILED" -ne 0 ]; then echo "[test:db] FAILED"; exit 1; fi

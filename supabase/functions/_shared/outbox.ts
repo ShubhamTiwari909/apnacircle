@@ -12,6 +12,7 @@ export interface OutboxPayload {
   reason?: unknown;
   decision?: unknown;
   starts_at?: unknown;
+  grace_ends_at?: unknown;
 }
 
 export interface RenderedMessage {
@@ -23,13 +24,20 @@ export interface RenderedMessage {
   priority: boolean;
 }
 
+// Zero-width characters and bidirectional controls can hide or reorder text.
+const INVISIBLE = /[\u200B-\u200F\u202A-\u202E\u2060\u2066-\u2069\uFEFF]/g;
+// Links in host-typed text would appear inside an email that carries the ApnaCircle name.
+const LINKS = /(?:https?:\/\/|www\.)\S*/gi;
+
 function clean(value: unknown, max: number): string {
   if (typeof value !== 'string') return '';
   const spaced = Array.from(value, (ch) => {
-    const code = ch.charCodeAt(0);
-    return code < 32 || code === 127 ? ' ' : ch;
+    const code = ch.codePointAt(0) ?? 0;
+    return code < 32 || (code >= 127 && code <= 159) ? ' ' : ch;
   }).join('');
-  return spaced.replace(/\s+/g, ' ').trim().slice(0, max);
+  const text = spaced.replace(INVISIBLE, '').replace(LINKS, '').replace(/\s+/g, ' ').trim();
+  // Truncate by code point so an emoji is never cut in half.
+  return Array.from(text).slice(0, max).join('');
 }
 
 const whenFormat = new Intl.DateTimeFormat('en-IN', {
@@ -85,6 +93,12 @@ export function renderMessage(payload: OutboxPayload, siteUrl: string): Rendered
       );
     case 'meetup_changed':
       return make(`Changed: ${title}`, [`The time or place of "${title}" has changed. Please check the new details before you set off.`], 'Please check the new details.');
+    case 'meetup_on_hold':
+      return make(
+        `On hold: ${title}`,
+        [`"${title}" is on hold for now${at ? ` (it was planned for ${at})` : ''}. Please check ApnaCircle before you set off.`],
+        `On hold: ${title}`,
+      );
     case 'meetup_reminder_24h':
       return make(`Tomorrow: ${title}`, [`A reminder that "${title}" starts ${at || 'tomorrow'}.`], at ? `Starts ${at}` : 'Starts tomorrow');
     case 'meetup_reminder_2h':
@@ -101,6 +115,20 @@ export function renderMessage(payload: OutboxPayload, siteUrl: string): Rendered
         : make(`Needs changes: ${title}`, [`An admin has asked for changes to "${title}" before it can go live. Open ApnaCircle to read their note.`], 'Changes requested.');
     case 'moderation_outcome':
       return make('Update on your report', ['There is an update on a report you made. Please open ApnaCircle for details.'], 'There is an update on your report.');
+    case 'moderation_action':
+      // Deliberately generic: the moderator's reason is not copied into email.
+      return make('An update about your account', ['A moderation decision has been made about your account. Please open ApnaCircle for details.'], 'There is an update about your account.');
+    case 'account_deletion_requested': {
+      const graceEnds = when(payload.grace_ends_at);
+      return make(
+        'We received your account deletion request',
+        [
+          `We received a request to delete your ApnaCircle account${graceEnds ? `. It will be deleted after ${graceEnds}` : ''}.`,
+          'If you did not make this request, please contact ApnaCircle support straight away.',
+        ],
+        'We received your account deletion request.',
+      );
+    }
     default:
       return null;
   }

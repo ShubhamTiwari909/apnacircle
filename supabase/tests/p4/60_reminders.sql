@@ -10,7 +10,7 @@ insert into public.meetup_attendees (meetup_id, user_id, status) values
   (:'m2', t.u(4), 'approved'),
   (:'mfar', t.u(4), 'approved'),
   (:'mcan', t.u(4), 'approved');
-insert into public.push_subscriptions (user_id, endpoint, p256dh, auth) values (t.u(4), 'https://push.invalid/4', 'k', 'a');
+insert into public.push_subscriptions (user_id, endpoint, p256dh, auth) values (t.u(4), 'https://fcm.googleapis.com/fcm/send/4', 'k', 'a');
 
 select t.as_user(t.u(4));
 select t.throws($$select public.enqueue_meetup_reminders()$$, '42501', 'members cannot trigger reminders');

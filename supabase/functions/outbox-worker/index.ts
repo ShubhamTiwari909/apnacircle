@@ -7,6 +7,17 @@ import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.0';
 import webpush from 'npm:web-push@3.6.7';
 import { renderMessage, type OutboxPayload } from '../_shared/outbox.ts';
+import { isAllowedPushEndpoint } from '../_shared/push.ts';
+
+// Stop starting new deliveries after this long. Claimed rows are leased for 5 minutes, so anything
+// left over is picked up again by the next run instead of being sent twice by an overlapping one.
+const MAX_BATCH_MS = 4 * 60 * 1000;
+const REQUIRED_ENV = [
+  'CRON_SECRET', 'SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY',
+  'RESEND_API_KEY', 'FROM_EMAIL',
+  'VAPID_PUBLIC_KEY', 'VAPID_PRIVATE_KEY', 'VAPID_SUBJECT',
+] as const;
+const FETCH_TIMEOUT_MS = 10_000;
 
 interface OutboxRow {
   id: string;
@@ -30,6 +41,14 @@ serve(async (req) => {
   const expected = Deno.env.get('CRON_SECRET');
   if (!expected || req.headers.get('x-cron-secret') !== expected) return json({ error: 'Unauthorized' }, 401);
 
+  // Check configuration BEFORE claiming anything. Claiming counts an attempt, so a missing secret
+  // would otherwise burn every row's retries and dead-letter the whole queue within ~30 minutes.
+  const missing = REQUIRED_ENV.filter((name) => !Deno.env.get(name));
+  if (missing.length > 0) {
+    console.error('outbox-worker is not configured; missing:', missing.join(', '));
+    return json({ error: 'not configured' }, 503);
+  }
+
   const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
   const siteUrl = Deno.env.get('SITE_URL') ?? 'https://apnacircle.example';
 
@@ -41,20 +60,24 @@ serve(async (req) => {
 
   const rows = (data ?? []) as OutboxRow[];
   const tally = { sent: 0, retry: 0, dead: 0 };
+  const startedAt = Date.now();
 
   for (const row of rows) {
+    if (Date.now() - startedAt > MAX_BATCH_MS) break;
     let outcome: Outcome;
     try {
       outcome = await deliver(supabase, row, siteUrl);
     } catch (err) {
       outcome = { ok: false, error: err instanceof Error ? err.message : 'unexpected error' };
     }
-    await supabase.rpc('complete_notification_outbox', {
+    const { error: completeError } = await supabase.rpc('complete_notification_outbox', {
       p_id: row.id,
       p_ok: outcome.ok,
       p_error: outcome.error ?? null,
       p_permanent: outcome.permanent ?? false,
     });
+    // The row id is not personal data; the recipient and message are never logged.
+    if (completeError) console.error('complete failed for outbox row', row.id, completeError.message);
     if (outcome.ok) tally.sent++;
     else if (outcome.permanent) tally.dead++;
     else tally.retry++;
@@ -69,7 +92,7 @@ async function deliver(supabase: ReturnType<typeof createClient>, row: OutboxRow
   const message = renderMessage(row.payload ?? {}, siteUrl);
   if (!message) return { ok: false, permanent: true, error: 'unknown notification type' };
 
-  if (row.channel === 'email') return await sendEmail(supabase, row.recipient_id, message.subject, message.text);
+  if (row.channel === 'email') return await sendEmail(supabase, row.id, row.recipient_id, message.subject, message.text);
   if (row.channel === 'push') {
     return await sendPush(supabase, row.recipient_id, {
       title: message.pushTitle,
@@ -83,6 +106,7 @@ async function deliver(supabase: ReturnType<typeof createClient>, row: OutboxRow
 
 async function sendEmail(
   supabase: ReturnType<typeof createClient>,
+  rowId: string,
   recipientId: string,
   subject: string,
   text: string,
@@ -97,8 +121,10 @@ async function sendEmail(
 
   const response = await fetch('https://api.resend.com/emails', {
     method: 'POST',
-    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+    // The row id makes a retry after a lost response a no-op at the provider instead of a duplicate email.
+    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json', 'Idempotency-Key': rowId },
     body: JSON.stringify({ from, to, subject, text }),
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   });
   if (response.ok) return { ok: true };
   // Bad request / validation errors will not improve on retry; rate limits and 5xx will.
@@ -134,11 +160,17 @@ async function sendPush(
   let delivered = 0;
   let gone = 0;
   for (const sub of subscriptions) {
+    // Never send to anything that is not a real push service, even if one was stored earlier.
+    if (!isAllowedPushEndpoint(sub.endpoint)) {
+      await supabase.from('push_subscriptions').delete().eq('id', sub.id);
+      gone++;
+      continue;
+    }
     try {
       await webpush.sendNotification(
         { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
         JSON.stringify({ title: content.title, body: content.body, url: content.url }),
-        { TTL: 86400, urgency: content.priority ? 'high' : 'normal' },
+        { TTL: 86400, urgency: content.priority ? 'high' : 'normal', timeout: FETCH_TIMEOUT_MS },
       );
       delivered++;
     } catch (err) {

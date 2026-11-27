@@ -100,7 +100,7 @@ describe('getPublicMeetup', () => {
   it('returns null when there is no such meetup, and the meetup when there is', async () => {
     const none = await getPublicMeetup(config, 'saharanpur', 'x', vi.fn<FetchLike>().mockResolvedValue(json([])));
     expect(none).toEqual({ ok: true, data: null });
-    const one = await getPublicMeetup(config, 'saharanpur', 'ride-1', vi.fn<FetchLike>().mockResolvedValue(json([{ ...row(1), status: 'published', cancel_reason: null }])));
+    const one = await getPublicMeetup(config, 'saharanpur', 'ride-1', vi.fn<FetchLike>().mockResolvedValue(json([{ ...row(1), status: 'published' }])));
     expect(one.ok && one.data?.slug).toBe('ride-1');
   });
 });
@@ -115,7 +115,7 @@ describe('capacity helpers', () => {
 });
 
 describe('Event structured data', () => {
-  const published = { ...row(1), status: 'published', cancel_reason: null } as unknown as PublicMeetupDetail;
+  const published = { ...row(1), status: 'published' } as unknown as PublicMeetupDetail;
   const now = new Date('2026-11-27T10:00:00Z');
 
   it('describes a current, approved event with an offline attendance mode', () => {
@@ -125,7 +125,8 @@ describe('Event structured data', () => {
       eventAttendanceMode: string;
       url: string;
       remainingAttendeeCapacity: number;
-      location: { address: { addressRegion: string } };
+      location: { address: { addressRegion: string; streetAddress?: string } };
+      organizer: { '@type': string; name: string };
     };
     expect(ld['@type']).toBe('Event');
     expect(ld.eventStatus).toBe('https://schema.org/EventScheduled');
@@ -133,6 +134,10 @@ describe('Event structured data', () => {
     expect(ld.url).toBe('https://apnacircle.example/saharanpur/meetups/ride-1');
     expect(ld.location.address.addressRegion).toBe('Uttar Pradesh');
     expect(ld.remainingAttendeeCapacity).toBe(8);
+    // A neighbourhood is not a street address, and the host's name is not published as structured data.
+    expect(ld.location.address.streetAddress).toBeUndefined();
+    expect(ld.organizer).toEqual(expect.objectContaining({ '@type': 'Organization', name: 'ApnaCircle' }));
+    expect(JSON.stringify(ld.organizer)).not.toContain('Hari');
   });
 
   it('emits nothing for cancelled or past events', () => {

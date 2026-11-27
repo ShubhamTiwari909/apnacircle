@@ -1,5 +1,9 @@
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.0';
+import { tokenIssuedAt } from '../_shared/staff.ts';
+
+// Deleting an account needs a recent sign-in, not just any valid (possibly stolen or old) session.
+const RECENT_LOGIN_SECONDS = 5 * 60;
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -90,6 +94,14 @@ serve(async (req) => {
         });
       }
 
+      const issuedAt = tokenIssuedAt(authHeader.replace('Bearer ', ''));
+      if (issuedAt === null || Date.now() / 1000 - issuedAt > RECENT_LOGIN_SECONDS) {
+        return new Response(JSON.stringify({ error: 'Please sign in again before deleting your account', code: 'reauth_required' }), {
+          status: 403,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
       // Check if already pending
       const { data: existing } = await supabase
         .from('account_deletion_requests')
@@ -106,8 +118,8 @@ serve(async (req) => {
       }
 
       // NOTE: the previous "verify password" step called auth.admin.updateUserById(), which
-      // overwrote the member's password with the submitted value. It was removed; the typed
-      // confirmation string is the safeguard.
+      // overwrote the member's password with the submitted value. It was removed. The safeguards are
+      // the typed confirmation string plus the recent-sign-in check above (a fresh access token).
 
       // Create deletion request
       const { data: deletionRequest, error: insertError } = await supabase
@@ -136,7 +148,8 @@ serve(async (req) => {
           type: 'account_deletion_requested',
           grace_ends_at: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
         },
-        idempotency_key: `deletion_${userId}_requested`,
+        // Keyed by the request, so a request made after an earlier one was cancelled still sends its email.
+        idempotency_key: `deletion_${deletionRequest.id}_requested`,
       }, { upsert: true });
 
       // Audit log

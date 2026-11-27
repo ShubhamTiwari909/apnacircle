@@ -27,7 +27,6 @@ export const publicMeetupSchema = z.object({
 
 export const publicMeetupDetailSchema = publicMeetupSchema.extend({
   status: z.enum(['published', 'cancelled']),
-  cancel_reason: z.string().nullable(),
 });
 
 export type PublicMeetup = z.infer<typeof publicMeetupSchema>;

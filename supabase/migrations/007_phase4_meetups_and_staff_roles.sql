@@ -19,6 +19,7 @@ alter type public.notification_type add value if not exists 'rsvp_requested';
 alter type public.notification_type add value if not exists 'host_decision';
 alter type public.notification_type add value if not exists 'meetup_review';
 alter type public.notification_type add value if not exists 'feedback_prompt';
+alter type public.notification_type add value if not exists 'meetup_on_hold';
 alter type public.consent_purpose add value if not exists 'host_agreement';
 alter type public.consent_purpose add value if not exists 'meetup_acknowledgement';
 
@@ -129,15 +130,37 @@ alter table public.meetups
   add column if not exists cancelled_at timestamptz,
   add column if not exists completed_at timestamptz;
 
+-- Meetups that predate this migration cannot have been attested, so mark non-draft rows as already
+-- reviewed for venue before the constraint below is added (otherwise it would abort on any such row).
+update public.meetups set venue_confirmed_public = true where status <> 'draft' and not venue_confirmed_public;
+
+-- Each constraint is dropped first so this file can be re-run. The shape rules are added NOT VALID:
+-- they apply to every new or changed row, but an old row that breaks one cannot abort the migration.
+-- Run `alter table public.meetups validate constraint <name>` once existing data is clean.
 alter table public.meetups
-  add constraint meetups_capacity_ceiling check (capacity <= 50),
-  add constraint meetups_time_order check (ends_at is null or ends_at > starts_at),
-  add constraint meetups_title_len check (char_length(title) between 5 and 120),
-  add constraint meetups_venue_len check (char_length(venue_name) between 3 and 120),
-  add constraint meetups_locality_len check (char_length(locality) between 2 and 80),
-  add constraint meetups_spot_note_len check (spot_note is null or char_length(spot_note) <= 300),
+  drop constraint if exists meetups_capacity_ceiling,
+  drop constraint if exists meetups_time_order,
+  drop constraint if exists meetups_title_len,
+  drop constraint if exists meetups_venue_len,
+  drop constraint if exists meetups_locality_len,
+  drop constraint if exists meetups_spot_note_len,
+  drop constraint if exists meetups_public_venue_attested;
+alter table public.meetups
+  add constraint meetups_capacity_ceiling check (capacity <= 50) not valid,
+  add constraint meetups_time_order check (ends_at is null or ends_at > starts_at) not valid,
+  add constraint meetups_title_len check (char_length(title) between 5 and 120) not valid,
+  add constraint meetups_venue_len check (char_length(venue_name) between 3 and 120) not valid,
+  add constraint meetups_locality_len check (char_length(locality) between 2 and 80) not valid,
+  add constraint meetups_spot_note_len check (spot_note is null or char_length(spot_note) <= 300) not valid,
   -- Events always have a public venue: hosts attest to it and an admin reviews it.
   add constraint meetups_public_venue_attested check (status = 'draft' or venue_confirmed_public);
+
+-- A push endpoint is a URL the outbox worker POSTs to, so only real browser push services are stored.
+-- (NOT VALID: rows from before this migration are left alone; the worker re-checks before sending.)
+alter table public.push_subscriptions drop constraint if exists push_subscriptions_endpoint_host;
+alter table public.push_subscriptions add constraint push_subscriptions_endpoint_host check (
+  endpoint ~* '^https://(fcm\.googleapis\.com|updates\.push\.services\.mozilla\.com|web\.push\.apple\.com|[a-z0-9-]+\.notify\.windows\.com|[a-z0-9-]+\.push\.services\.mozilla\.com)(/|$)'
+) not valid;
 
 alter table public.meetup_attendees
   add column if not exists responded_at timestamptz,
@@ -239,9 +262,15 @@ returns boolean
 language sql stable security definer
 set search_path = ''
 as $$
+  -- Counts only events that an admin other than the host approved, that were actually published,
+  -- and that are still published or completed. Rejected, cancelled and never-published events do not
+  -- count, so the cap and pre-publication review cannot be skipped by inflating this number.
   select (
     select count(*) from public.meetups m
-    where m.host_id = p_user and m.reviewed_at is not null and m.status <> 'rejected'
+    where m.host_id = p_user
+      and m.reviewed_by is not null and m.reviewed_by <> p_user
+      and m.first_published_at is not null
+      and m.status in ('published', 'completed')
   ) >= app_private.meetup_limit('established_after')
 $$;
 
@@ -254,9 +283,39 @@ as $$
          || '-' || substr(replace(gen_random_uuid()::text, '-', ''), 1, 6)
 $$;
 
+-- Why this member may not (or may no longer) join this meetup, or null when they may. One function
+-- for both join_meetup and the host's approval, so the two paths cannot drift apart.
+create or replace function app_private.join_blocker(p_user uuid, p_m public.meetups)
+returns text
+language plpgsql stable security definer
+set search_path = ''
+as $$
+begin
+  if p_m.host_id = p_user or app_private.is_blocked_pair(p_user, p_m.host_id) then
+    return 'unavailable';
+  end if;
+  if app_private.is_sanctioned(p_user)
+     or exists (select 1 from public.profiles p where p.id = p_user and (p.profile_status <> 'active' or p.trust_level = 'Restricted')) then
+    return 'account';
+  end if;
+  if not app_private.is_age_confirmed(p_user) then
+    return 'age';
+  end if;
+  if p_m.women_only and not coalesce((select pp.women_only_eligible from app_private.profile_private pp where pp.profile_id = p_user), false) then
+    return 'women_only';
+  end if;
+  if not exists (select 1 from public.hosts h where h.user_id = p_m.host_id and h.status = 'approved') then
+    return 'unavailable';
+  end if;
+  return null;
+end;
+$$;
+
 -- Queue a notification on every channel the table in plan 3.9 allows for this event.
--- In-app always; email when asked; push only when the member has a subscription and has not
--- turned push off. Non-priority push is held until quiet hours end (22:00-08:00 IST by default).
+-- In-app always; email only when the member has opted in to email (a missing preferences row means
+-- no email) or the message is one a member needs in order to avoid a wasted or unsafe trip
+-- (cancelled / changed / on-hold meetups; the list is below and is a product decision); push only when the
+-- member has a subscription and has not turned push off. Non-priority push is held until quiet hours end (22:00-08:00 IST by default).
 create or replace function app_private.enqueue_notification(
   p_recipient uuid,
   p_type public.notification_type,
@@ -287,7 +346,7 @@ begin
 
   select * into v_prefs from public.notification_preferences where user_id = p_recipient;
 
-  if p_email then
+  if p_email and (coalesce(v_prefs.email, false) or p_type in ('meetup_cancelled', 'meetup_changed', 'meetup_on_hold')) then
     insert into public.notification_outbox (channel, recipient_id, payload, idempotency_key)
     values ('email', p_recipient, v_payload, 'email:' || p_key || ':' || p_recipient)
     on conflict (idempotency_key) do nothing;
@@ -504,6 +563,8 @@ as $$
 declare
   v_admin uuid := auth.uid();
   v_status public.host_status;
+  v_held record;
+  v_att record;
 begin
   if not public.is_admin() then
     raise exception 'Admin access with MFA required' using errcode = 'P0403';
@@ -522,8 +583,9 @@ begin
   if not found then
     raise exception 'No such host application' using errcode = 'P0404';
   end if;
-  if p_decision = 'approve' and v_status <> 'pending' then
-    raise exception 'Only pending applications can be approved' using errcode = 'P0409';
+  -- A suspended host can be reinstated (the notes are required above, so the reason is on record).
+  if p_decision = 'approve' and v_status not in ('pending', 'suspended') then
+    raise exception 'Only pending or suspended hosts can be approved' using errcode = 'P0409';
   end if;
 
   update public.hosts set
@@ -540,9 +602,23 @@ begin
   where user_id = p_user_id;
 
   -- A suspended host's upcoming events leave the public listing until reviewed.
+  -- People who had a place are told, so the event does not just vanish from their list.
   if p_decision = 'suspend' then
-    update public.meetups set status = 'pending_approval', updated_at = now()
-     where host_id = p_user_id and status = 'published' and starts_at > now();
+    for v_held in
+      update public.meetups set status = 'pending_approval', updated_at = now()
+       where host_id = p_user_id and status = 'published' and starts_at > now()
+      returning id, title, starts_at
+    loop
+      for v_att in
+        select user_id from public.meetup_attendees where meetup_id = v_held.id and status in ('requested', 'approved')
+      loop
+        perform app_private.enqueue_notification(
+          v_att.user_id, 'meetup_on_hold', v_held.id,
+          'meetup_on_hold:' || v_held.id,
+          jsonb_build_object('meetup_id', v_held.id, 'meetup_title', v_held.title, 'starts_at', v_held.starts_at),
+          true, true, true);
+      end loop;
+    end loop;
   end if;
 
   perform app_private.enqueue_notification(
@@ -640,6 +716,7 @@ declare
   v_category uuid;
   v_approved int;
   v_material boolean;
+  v_content_changed boolean;
   v_needs_review boolean;
   v_att record;
 begin
@@ -661,7 +738,7 @@ begin
   perform app_private.validate_meetup_fields(
     v_uid, p_title, p_description, p_venue_name, p_locality, p_spot_note,
     p_starts_at, p_ends_at, p_capacity, coalesce(p_women_only, false), coalesce(p_join_mode, 'auto'),
-    p_venue_confirmed_public, v_m.status = 'draft');
+    p_venue_confirmed_public, v_m.status = 'draft' or p_starts_at is distinct from v_m.starts_at);
 
   select count(*) into v_approved from public.meetup_attendees
    where meetup_id = p_meetup_id and status in ('approved', 'attended');
@@ -680,9 +757,16 @@ begin
              or v_m.capacity is distinct from p_capacity
              or v_m.women_only is distinct from coalesce(p_women_only, false);
 
+  -- What the event is about can change too. Without this, approval would be a one-time gate: a
+  -- clean event could be approved and then rewritten.
+  v_content_changed := v_m.title is distinct from trim(p_title)
+                    or v_m.description is distinct from trim(p_description)
+                    or v_m.category_id is distinct from v_category
+                    or v_m.join_mode is distinct from coalesce(p_join_mode, 'auto');
+
   -- Admin must re-see a published event of a not-yet-established host (or any women-only event)
-  -- if the venue, time, size or audience changes.
-  v_needs_review := v_m.status = 'published' and v_material
+  -- if the venue, time, size, audience or content changes.
+  v_needs_review := v_m.status = 'published' and (v_material or v_content_changed)
                     and (not app_private.is_established_host(v_uid) or coalesce(p_women_only, false));
 
   update public.meetups set
@@ -701,6 +785,9 @@ begin
     status = case when v_needs_review then 'pending_approval'::public.meetup_status
                   when v_m.status = 'rejected' then 'draft'::public.meetup_status
                   else v_m.status end,
+    -- A rejected event that goes back to draft starts a fresh review.
+    reviewed_by = case when v_m.status = 'rejected' then null else reviewed_by end,
+    reviewed_at = case when v_m.status = 'rejected' then null else reviewed_at end,
     updated_at = now()
   where id = p_meetup_id;
 
@@ -717,7 +804,7 @@ begin
   end if;
 
   insert into public.audit_log (actor_id, action, target)
-  values (v_uid, 'meetup_updated', jsonb_build_object('meetup_id', p_meetup_id, 'material', v_material, 'sent_to_review', v_needs_review));
+  values (v_uid, 'meetup_updated', jsonb_build_object('meetup_id', p_meetup_id, 'material', v_material, 'content_changed', v_content_changed, 'sent_to_review', v_needs_review));
 end;
 $$;
 
@@ -840,6 +927,11 @@ begin
   if v_m.status in ('cancelled', 'completed') then
     raise exception 'This meetup is already finished' using errcode = 'P0409';
   end if;
+  -- Once it has started it can only be completed, not cancelled (cancelling would tell people who
+  -- already attended that it was called off and skip the attendance and feedback flow).
+  if v_m.starts_at <= now() and not public.is_admin() then
+    raise exception 'This meetup has already started. Mark it as completed instead' using errcode = 'P0409';
+  end if;
 
   update public.meetups set
     status = 'cancelled', cancel_reason = v_reason, cancelled_at = now(), updated_at = now()
@@ -879,6 +971,7 @@ declare
   v_existing public.attendee_status;
   v_count int;
   v_new public.attendee_status;
+  v_blocker text;
 begin
   if v_uid is null then
     raise exception 'Sign in required' using errcode = 'P0401';
@@ -892,21 +985,15 @@ begin
   if not found or v_m.starts_at <= now() then
     raise exception 'Meetup not available' using errcode = 'P0404';
   end if;
-  if v_m.host_id = v_uid or app_private.is_blocked_pair(v_uid, v_m.host_id) then
+  v_blocker := app_private.join_blocker(v_uid, v_m);
+  if v_blocker = 'unavailable' then
     raise exception 'Meetup not available' using errcode = 'P0404';
-  end if;
-  if app_private.is_sanctioned(v_uid)
-     or exists (select 1 from public.profiles p where p.id = v_uid and (p.profile_status <> 'active' or p.trust_level = 'Restricted')) then
+  elsif v_blocker = 'account' then
     raise exception 'Your account cannot join meetups right now' using errcode = 'P0403';
-  end if;
-  if not app_private.is_age_confirmed(v_uid) then
+  elsif v_blocker = 'age' then
     raise exception 'Complete the age check to join meetups' using errcode = 'P0403';
-  end if;
-  if v_m.women_only and not coalesce((select pp.women_only_eligible from app_private.profile_private pp where pp.profile_id = v_uid), false) then
+  elsif v_blocker = 'women_only' then
     raise exception 'This meetup is not open to your profile' using errcode = 'P0403';
-  end if;
-  if not exists (select 1 from public.hosts h where h.user_id = v_m.host_id and h.status = 'approved') then
-    raise exception 'Meetup not available' using errcode = 'P0404';
   end if;
 
   select status into v_existing from public.meetup_attendees where meetup_id = p_meetup_id and user_id = v_uid for update;
@@ -1024,6 +1111,10 @@ begin
     select count(*) into v_count from public.meetup_attendees where meetup_id = p_meetup_id and status in ('approved', 'attended');
     if v_count >= v_m.capacity then
       raise exception 'This meetup is full' using errcode = 'P0414';
+    end if;
+    -- The request may be days old: re-check bans, restrictions, blocks and women-only eligibility.
+    if app_private.join_blocker(p_user_id, v_m) is not null then
+      raise exception 'This person can no longer join this meetup. You can decline the request' using errcode = 'P0403';
     end if;
     update public.meetup_attendees set status = 'approved', responded_at = now() where meetup_id = p_meetup_id and user_id = p_user_id;
     perform app_private.enqueue_notification(
@@ -1245,14 +1336,16 @@ as $$
    limit greatest(1, least(coalesce(p_limit, 20), 50))
 $$;
 
--- Public detail: published, or recently cancelled so a shared link explains itself.
+-- Public detail: published, or recently cancelled so a shared link says so. The host's reason is
+-- free text and is deliberately not returned here (anonymous, cacheable, indexable).
+drop function if exists public.get_public_meetup(text, text);
 create or replace function public.get_public_meetup(p_city_slug text, p_slug text)
 returns table (
   id uuid, slug text, city_slug text, city_name text, category_slug text, category_name text,
   title text, description text, venue_name text, locality text,
   starts_at timestamptz, ends_at timestamptz, capacity int, attendee_count int,
   women_only boolean, join_mode text, host_display_name text,
-  status text, cancel_reason text
+  status text
 )
 language sql stable security definer
 set search_path = ''
@@ -1261,7 +1354,7 @@ as $$
          m.title, m.description, m.venue_name, m.locality,
          m.starts_at, m.ends_at, m.capacity,
          (select count(*)::int from public.meetup_attendees a where a.meetup_id = m.id and a.status in ('approved', 'attended')),
-         m.women_only, m.join_mode, hp.display_name, m.status::text, m.cancel_reason
+         m.women_only, m.join_mode, hp.display_name, m.status::text
     from public.meetups m
     join public.cities c on c.id = m.city_id and c.active
     join public.categories k on k.id = m.category_id

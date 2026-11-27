@@ -71,3 +71,33 @@ Verification run on 27 Nov 2026: `pnpm lint`, `typecheck`, `test` (44 unit tests
 8. Before Stage A: apply migrations 007 and 008 to staging, grant staff roles (playbook), set Worker build variables.
 
 Owner decisions needed: confirm the women-only capacity of 12; confirm the new-host rule ("established" after 3 admin-approved events).
+
+## Pull request review follow-ups (PR 3)
+
+Fixed after review: email now follows the member's preference (only cancelled, changed and on-hold
+meetup notices email regardless; a missing preferences row means no email); the public meetup lookup no
+longer returns the host's free-text cancel reason; push endpoints are checked against known push-service
+hosts when stored and again before sending (and capped at 10 per member); the outbox worker checks its
+configuration before claiming, times out requests, sends an idempotency key and checks the completion
+result; bans and suspensions are admin-only, sanction targets and end dates are validated, and a report
+can only be resolved once; admin MFA enrol and backup-code reset need the current factor; deletion needs a
+recent sign-in; `moderation_action`, `account_deletion_requested` and the new `meetup_on_hold` email types
+have renderers; migration 007 backfills and is re-runnable; "established host" counts only events another
+admin approved, that were published and are still published or completed; edits to title, description,
+category and join mode send a new host's event back to review, and moving the start time re-applies the
+lead-time rule; started events cannot be cancelled by hosts; approval re-checks eligibility; suspended
+hosts can be reinstated and their attendees are told; `test-db.sh` fails on pgTAP `not ok`, handles URI
+connection strings and drops its database; migration 008 is now exercised by the test runner.
+
+**Still open, needs a decision:**
+- Host-only check-in decides who is a `no_show` and who may leave safety feedback (hosts can leave people
+  unchecked-in; the finaliser then marks them no-show). Product and trust-design call.
+- Two MFA mechanisms exist: Supabase native MFA (issues `aal2`, which `isStaff` requires) and the custom
+  TOTP in `admin-mfa` (does not). Pick one.
+- Account deletion still has no `account_deletion_requests` migration, no cancel path and nothing that
+  executes it (item 5 above).
+- Whether CI should install pgtap and set `REQUIRE_PGTAP=1`.
+- Found in review and not changed because those lines are outside this PR's changes: `reports` accepts
+  categories that are not in the `report_category` enum (`non_consensual_intimate_imagery`,
+  `inappropriate_content`); `onboarding` writes `consent_records` (which lives in `app_private`) through
+  PostgREST; `nightly-jobs` compares the cron secret with `!==` and passes a query builder to `.in()`.

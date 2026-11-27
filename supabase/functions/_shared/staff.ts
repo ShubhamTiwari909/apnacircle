@@ -28,6 +28,12 @@ function jwtClaims(token: string): Record<string, unknown> {
   }
 }
 
+/** When the (already validated) access token was issued, in seconds since the epoch, if it says. */
+export function tokenIssuedAt(token: string): number | null {
+  const iat = jwtClaims(token).iat;
+  return typeof iat === 'number' && Number.isFinite(iat) ? iat : null;
+}
+
 export function hasMfaSession(token: string): boolean {
   return jwtClaims(token).aal === 'aal2';
 }

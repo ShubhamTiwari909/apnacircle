@@ -8,6 +8,7 @@
 //   phishing vector, so that route no longer exists.
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.0';
+import { isAllowedPushEndpoint, MAX_PUSH_SUBSCRIPTIONS_PER_USER } from '../_shared/push.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -51,11 +52,22 @@ serve(async (req) => {
       const body = (await req.json()) as PushSubscriptionBody;
       const { endpoint, p256dh, auth } = body;
       if (
-        typeof endpoint !== 'string' || endpoint.length > 2048 || !/^https:\/\/[^\s]+$/.test(endpoint) ||
+        !isAllowedPushEndpoint(endpoint) ||
         typeof p256dh !== 'string' || !BASE64URL.test(p256dh) ||
         typeof auth !== 'string' || !BASE64URL.test(auth)
       ) {
         return json({ error: 'Invalid push subscription' }, 400);
+      }
+
+      // Cap subscriptions per member (re-subscribing the same endpoint is always fine).
+      const { data: existing } = await supabase
+        .from('push_subscriptions')
+        .select('endpoint')
+        .eq('user_id', userId)
+        .limit(MAX_PUSH_SUBSCRIPTIONS_PER_USER + 1);
+      const known = (existing ?? []) as { endpoint: string }[];
+      if (!known.some((row) => row.endpoint === endpoint) && known.length >= MAX_PUSH_SUBSCRIPTIONS_PER_USER) {
+        return json({ error: 'Too many push subscriptions' }, 429);
       }
 
       const { error: subError } = await supabase.from('push_subscriptions').upsert(

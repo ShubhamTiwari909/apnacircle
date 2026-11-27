@@ -33,19 +33,23 @@ begin
 end $$;
 
 -- Assert that a statement fails with the given SQLSTATE, run as whoever is currently active.
-create or replace function t.throws(p_sql text, p_state text, p_msg text) returns void language plpgsql as $$
+-- Several rules share one SQLSTATE (for example P0422), so pass `p_like` (an ILIKE pattern) to also
+-- require the right message; otherwise a different rule failing first would pass for the wrong reason.
+drop function if exists t.throws(text, text, text);
+create or replace function t.throws(p_sql text, p_state text, p_msg text, p_like text default null) returns void language plpgsql as $$
 declare
   v_state text;
+  v_err text;
 begin
   begin
     execute p_sql;
   exception when others then
-    get stacked diagnostics v_state = returned_sqlstate;
-    if v_state = p_state then
+    get stacked diagnostics v_state = returned_sqlstate, v_err = message_text;
+    if v_state = p_state and (p_like is null or v_err ilike p_like) then
       raise notice 'ok - % (%)', p_msg, v_state;
       return;
     end if;
-    raise exception 'FAIL: % (expected %, got %: %)', p_msg, p_state, v_state, sqlerrm;
+    raise exception 'FAIL: % (expected % like %, got %: %)', p_msg, p_state, coalesce(p_like, '*'), v_state, v_err;
   end;
   raise exception 'FAIL: % (expected %, but the statement succeeded)', p_msg, p_state;
 end $$;
@@ -68,6 +72,9 @@ begin
   insert into app_private.profile_private (profile_id, date_of_birth, age_confirmed_at)
   values (v_id, case when p_adult then date '1995-01-01' end, case when p_adult then now() end)
   on conflict do nothing;
+  -- Members in these tests have opted in to email and push (as onboarding records from consent).
+  -- Without a preferences row, or with email = false, no non-essential email is queued.
+  insert into public.notification_preferences (user_id, email, push) values (v_id, true, true) on conflict do nothing;
   return v_id;
 end $$;
 

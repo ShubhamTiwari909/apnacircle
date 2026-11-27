@@ -24,14 +24,35 @@ describe('renderMessage', () => {
     expect(m.text).toContain('Reason from the host: a b');
   });
 
+  it('removes links, bidi and zero-width characters from host text, and never splits an emoji', () => {
+    const m = renderMessage(
+      { type: 'meetup_cancelled', meetup_title: 'Ride', reason: 'Pay at https://evil.example/x or www.evil.example now \u202Eabc\u200B' },
+      SITE,
+    )!;
+    const reasonLine = m.text.split('\n').find((l) => l.startsWith('Reason from the host:')) ?? '';
+    expect(reasonLine).toBe('Reason from the host: Pay at or now abc');
+    expect(m.text).not.toMatch(/evil|[\u202A-\u202E\u200B-\u200F]/);
+    const long = renderMessage({ type: 'meetup_cancelled', meetup_title: '\u{1F600}'.repeat(200) }, SITE)!;
+    expect(long.subject).not.toMatch(/\uFFFD/);
+    expect(Array.from(long.subject.replace('Cancelled: ', '')).length).toBe(120);
+  });
+
+  it('keeps moderation and deletion emails generic, with the deletion grace date', () => {
+    const mod = renderMessage({ type: 'moderation_action', action: 'permanent_ban', reason: 'private moderator note' } as never, SITE)!;
+    expect(mod.text).not.toMatch(/private moderator note|permanent_ban/);
+    const del = renderMessage({ type: 'account_deletion_requested', grace_ends_at: '2030-12-15T04:30:00Z' }, SITE)!;
+    expect(del.text).toContain('deleted after');
+    expect(del.text).toContain('15 Dec');
+  });
+
   it('keeps member-to-member messages generic', () => {
     const m = renderMessage({ type: 'rsvp_requested', meetup_title: 'Ride', attendee_name: 'Priya Sharma', email: 'p@x.com' } as never, SITE)!;
     expect(m.text).not.toMatch(/Priya|p@x\.com/);
     expect(m.text).toContain('Someone has asked to join');
   });
 
-  it('covers every type the database enqueues for email or push', () => {
-    for (const type of ['rsvp_approved', 'rsvp_requested', 'rsvp_declined', 'meetup_cancelled', 'meetup_changed', 'meetup_reminder_24h', 'meetup_reminder_2h', 'host_decision', 'meetup_review', 'moderation_outcome']) {
+  it('covers every type the database and the edge functions enqueue for email or push', () => {
+    for (const type of ['rsvp_approved', 'rsvp_requested', 'rsvp_declined', 'meetup_cancelled', 'meetup_changed', 'meetup_reminder_24h', 'meetup_reminder_2h', 'host_decision', 'meetup_review', 'moderation_outcome', 'moderation_action', 'account_deletion_requested', 'meetup_on_hold']) {
       expect(renderMessage({ type, meetup_title: 'T' }, SITE), type).not.toBeNull();
     }
   });

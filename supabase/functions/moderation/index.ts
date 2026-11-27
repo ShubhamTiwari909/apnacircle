@@ -145,6 +145,36 @@ serve(async (req) => {
         });
       }
 
+      // Suspensions and permanent bans (which also record banned identifiers) are admin-only.
+      if (
+        (body.action === 'suspension' || body.action === 'permanent_ban') &&
+        !isStaff(user, authHeader.replace('Bearer ', ''), { adminOnly: true })
+      ) {
+        return new Response(JSON.stringify({ error: 'Forbidden: admin role required for this action' }), {
+          status: 403,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // A sanction needs a well-formed target, and an end date (when given) must be a future time.
+      const isUuid = (v: unknown): v is string =>
+        typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
+      if (body.target_user_id !== undefined && !isUuid(body.target_user_id)) {
+        return new Response(JSON.stringify({ error: 'Invalid target_user_id' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      if (body.ends_at !== undefined) {
+        const endsMs = Date.parse(body.ends_at);
+        if (!Number.isFinite(endsMs) || endsMs <= Date.now()) {
+          return new Response(JSON.stringify({ error: 'ends_at must be a future ISO date' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+      }
+
       // Get the report
       const { data: report, error: reportError } = await supabase
         .from('reports')
@@ -166,9 +196,22 @@ serve(async (req) => {
         });
       }
 
-      // Update report status
+      // When the report is about a profile, the sanction must be against that profile.
+      if (
+        body.target_user_id &&
+        report.target_type === 'profile' &&
+        body.target_user_id !== report.target_id
+      ) {
+        return new Response(JSON.stringify({ error: 'target_user_id does not match the reported profile' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Update report status. Conditional on the report still being open, so two moderators acting at
+      // the same moment cannot both resolve it (and create duplicate sanctions and notifications).
       const newStatus = body.action === 'dismiss' ? 'dismissed' : 'resolved';
-      const { error: updateError } = await supabase
+      const { data: updatedReports, error: updateError } = await supabase
         .from('reports')
         .update({
           status: newStatus,
@@ -176,12 +219,20 @@ serve(async (req) => {
           resolution: body.action,
           updated_at: new Date().toISOString(),
         })
-        .eq('id', body.report_id);
+        .eq('id', body.report_id)
+        .in('status', ['open', 'in_review'])
+        .select('id');
 
       if (updateError) {
         console.error('Report update error:', updateError);
         return new Response(JSON.stringify({ error: 'Failed to update report' }), {
           status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      if (!updatedReports || updatedReports.length === 0) {
+        return new Response(JSON.stringify({ error: 'Report was already resolved by someone else' }), {
+          status: 409,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }

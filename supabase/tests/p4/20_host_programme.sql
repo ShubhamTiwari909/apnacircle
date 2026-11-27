@@ -44,18 +44,18 @@ select t.ok(exists (select 1 from public.notification_outbox where recipient_id 
 
 -- Creation rules for a new (not yet established) host
 select t.as_user(t.u(3));
-select t.throws($$select public.create_meetup('roorkee','food-exploration','Sunday cafe walk','A relaxed group walk and chai at a public cafe.','Cafe','Civil Lines',null,t.at_ist(2,10),t.at_ist(2,12),10,false,'auto',true)$$, 'P0422', 'inactive city is rejected');
-select t.throws($$select public.create_meetup('saharanpur','no-such-category','Sunday cafe walk','A relaxed group walk and chai at a public cafe.','Cafe','Civil Lines',null,t.at_ist(2,10),t.at_ist(2,12),10,false,'auto',true)$$, 'P0422', 'unknown category is rejected');
-select t.throws($$select public.create_meetup('saharanpur','food-exploration','Sunday cafe walk','A relaxed group walk and chai at a public cafe.','Cafe','Civil Lines',null,now()+interval '1 hour',now()+interval '2 hours',10,false,'auto',true)$$, 'P0422', 'events need at least 6 hours lead time');
-select t.throws($$select public.create_meetup('saharanpur','food-exploration','Sunday cafe walk','A relaxed group walk and chai at a public cafe.','Cafe','Civil Lines',null,t.at_ist(2,20),t.at_ist(3,2),10,false,'auto',true)$$, 'P0422', 'overnight events are rejected');
-select t.throws($$select public.create_meetup('saharanpur','food-exploration','Sunday cafe walk','A relaxed group walk and chai at a public cafe.','Cafe','Civil Lines',null,t.at_ist(2,6),t.at_ist(2,15),10,false,'auto',true)$$, 'P0422', 'events longer than 8 hours are rejected');
-select t.throws($$select public.create_meetup('saharanpur','food-exploration','Sunday cafe walk','A relaxed group walk and chai at a public cafe.','Cafe','Civil Lines',null,t.at_ist(2,10),null,10,false,'auto',true)$$, 'P0422', 'an end time is required');
-select t.throws($$select public.create_meetup('saharanpur','food-exploration','Sunday cafe walk','A relaxed group walk and chai at a public cafe.','Cafe','Civil Lines',null,t.at_ist(2,10),t.at_ist(2,12),16,false,'auto',true)$$, 'P0422', 'first-three-events capacity cap is 15');
-select t.throws($$select public.create_meetup('saharanpur','food-exploration','Sunday cafe walk','A relaxed group walk and chai at a public cafe.','Cafe','Civil Lines',null,t.at_ist(2,10),t.at_ist(2,12),13,true,'auto',true)$$, 'P0422', 'women-only capacity cap is 12');
-select t.throws($$select public.create_meetup('saharanpur','food-exploration','Sunday cafe walk','A relaxed group walk and chai at a public cafe.','My house','Civil Lines',null,t.at_ist(2,10),t.at_ist(2,12),10,false,'auto',true)$$, 'P0422', 'a private home is rejected as a venue');
-select t.throws($$select public.create_meetup('saharanpur','food-exploration','Sunday trekking trip','A relaxed group walk and chai at a public cafe.','Cafe','Civil Lines',null,t.at_ist(2,10),t.at_ist(2,12),10,false,'auto',true)$$, 'P0422', 'trekking is out of V1 scope (D8)');
-select t.throws($$select public.create_meetup('saharanpur','food-exploration','Sunday cafe walk','A relaxed group walk and chai at a public cafe.','Cafe','Civil Lines',null,t.at_ist(2,10),t.at_ist(2,12),10,false,'auto',false)$$, 'P0422', 'the public-venue attestation is required');
-select t.throws($$select public.create_meetup('saharanpur','food-exploration','Sunday cafe walk','A relaxed group walk and chai at a public cafe.','Cafe','Civil Lines',repeat('x', 301),t.at_ist(2,10),t.at_ist(2,12),10,false,'auto',true)$$, 'P0422', 'spot note length is capped');
+select t.throws($$select public.create_meetup('roorkee','food-exploration','Sunday cafe walk','A relaxed group walk and chai at a public cafe.','Cafe','Civil Lines',null,t.at_ist(2,10),t.at_ist(2,12),10,false,'auto',true)$$, 'P0422', 'inactive city is rejected', '%not active%');
+select t.throws($$select public.create_meetup('saharanpur','no-such-category','Sunday cafe walk','A relaxed group walk and chai at a public cafe.','Cafe','Civil Lines',null,t.at_ist(2,10),t.at_ist(2,12),10,false,'auto',true)$$, 'P0422', 'unknown category is rejected', '%Unknown category%');
+select t.throws($$select public.create_meetup('saharanpur','food-exploration','Sunday cafe walk','A relaxed group walk and chai at a public cafe.','Cafe','Civil Lines',null,now()+interval '1 hour',now()+interval '2 hours',10,false,'auto',true)$$, 'P0422', 'events need at least 6 hours lead time', '%at least 6 hours%');
+select t.throws($$select public.create_meetup('saharanpur','food-exploration','Sunday cafe walk','A relaxed group walk and chai at a public cafe.','Cafe','Civil Lines',null,t.at_ist(2,20),t.at_ist(3,2),10,false,'auto',true)$$, 'P0422', 'overnight events are rejected', '%overnight%');
+select t.throws($$select public.create_meetup('saharanpur','food-exploration','Sunday cafe walk','A relaxed group walk and chai at a public cafe.','Cafe','Civil Lines',null,t.at_ist(2,6),t.at_ist(2,15),10,false,'auto',true)$$, 'P0422', 'events longer than 8 hours are rejected', '%within 8 hours%');
+select t.throws($$select public.create_meetup('saharanpur','food-exploration','Sunday cafe walk','A relaxed group walk and chai at a public cafe.','Cafe','Civil Lines',null,t.at_ist(2,10),null,10,false,'auto',true)$$, 'P0422', 'an end time is required', '%end time%');
+select t.throws($$select public.create_meetup('saharanpur','food-exploration','Sunday cafe walk','A relaxed group walk and chai at a public cafe.','Cafe','Civil Lines',null,t.at_ist(2,10),t.at_ist(2,12),16,false,'auto',true)$$, 'P0422', 'first-three-events capacity cap is 15', '%Capacity must be%');
+select t.throws($$select public.create_meetup('saharanpur','food-exploration','Sunday cafe walk','A relaxed group walk and chai at a public cafe.','Cafe','Civil Lines',null,t.at_ist(2,10),t.at_ist(2,12),13,true,'auto',true)$$, 'P0422', 'women-only capacity cap is 12', '%Capacity must be%');
+select t.throws($$select public.create_meetup('saharanpur','food-exploration','Sunday cafe walk','A relaxed group walk and chai at a public cafe.','My house','Civil Lines',null,t.at_ist(2,10),t.at_ist(2,12),10,false,'auto',true)$$, 'P0422', 'a private home is rejected as a venue', '%Private homes%');
+select t.throws($$select public.create_meetup('saharanpur','food-exploration','Sunday trekking trip','A relaxed group walk and chai at a public cafe.','Cafe','Civil Lines',null,t.at_ist(2,10),t.at_ist(2,12),10,false,'auto',true)$$, 'P0422', 'trekking is out of V1 scope (D8)', '%not supported in V1%');
+select t.throws($$select public.create_meetup('saharanpur','food-exploration','Sunday cafe walk','A relaxed group walk and chai at a public cafe.','Cafe','Civil Lines',null,t.at_ist(2,10),t.at_ist(2,12),10,false,'auto',false)$$, 'P0422', 'the public-venue attestation is required', '%public place%');
+select t.throws($$select public.create_meetup('saharanpur','food-exploration','Sunday cafe walk','A relaxed group walk and chai at a public cafe.','Cafe','Civil Lines',repeat('x', 301),t.at_ist(2,10),t.at_ist(2,12),10,false,'auto',true)$$, 'P0422', 'spot note length is capped', '%too long%');
 
 select public.create_meetup('saharanpur','food-exploration','Sunday cafe walk','A relaxed group walk and chai at a public cafe.','Company Garden Cafe','Civil Lines','Gate 2 near the ticket counter',t.at_ist(2,10),t.at_ist(2,12),10,false,'approval',true) as mid \gset
 reset role;
@@ -104,12 +104,55 @@ select t.make_host(15);
 select t.make_meetup(15, 'Old event one', 5, 'auto', false, now() - interval '30 days', 'completed');
 select t.make_meetup(15, 'Old event two', 5, 'auto', false, now() - interval '20 days', 'completed');
 select t.make_meetup(15, 'Old event three', 5, 'auto', false, now() - interval '10 days', 'completed');
-update public.meetups set reviewed_at = now(), reviewed_by = t.u(1) where host_id = t.u(15);
+update public.meetups set reviewed_at = now(), reviewed_by = t.u(1), first_published_at = starts_at - interval '1 day' where host_id = t.u(15);
+select t.ok(app_private.is_established_host(t.u(15)), 'three admin-approved, published and completed events make a host established');
 select t.as_user(t.u(15));
 select public.create_meetup('saharanpur','food-exploration','Big city food crawl','A big public food crawl across the main market lanes.','Main Market','Court Road',null,t.at_ist(4,16),t.at_ist(4,19),40,false,'auto',true) as mid3 \gset
 select t.ok(public.submit_meetup_for_review(:'mid3') = 'published', 'an established host publishes directly');
+-- ...and may rewrite what an event is about without sending it back to review (a new host may not: see 40)
+select public.update_meetup(:'mid3','food-exploration','Big city food crawl','A big public food crawl across the main market lanes, now with a tea stop.','Main Market','Court Road',null,t.at_ist(4,16),t.at_ist(4,19),40,false,'auto',true);
+reset role;
+select t.ok((select status = 'published' from public.meetups where id = :'mid3'), 'an established host can edit the description without a new review');
+select t.as_user(t.u(15));
 select public.create_meetup('saharanpur','food-exploration','Women book club','A women-only book club at the public library lawn.','City Library','Civil Lines',null,t.at_ist(4,10),t.at_ist(4,12),12,true,'auto',true) as mid4 \gset
 select t.ok(public.submit_meetup_for_review(:'mid4') = 'pending_approval', 'women-only events always need admin approval');
 reset role;
+
+-- The established-host count cannot be inflated (each host below has 3 events that fail one condition)
+select t.make_member(16, 'Unreviewed Una', 'L2'); select t.make_host(16);
+select t.make_meetup(16, 'Una event ' || g, 5, 'auto', false, now() - interval '10 days' - g * interval '1 day', 'completed') from generate_series(1, 3) g;
+update public.meetups set first_published_at = starts_at - interval '1 day' where host_id = t.u(16);
+select t.ok(not app_private.is_established_host(t.u(16)), 'completed events that no admin reviewed do not make a host established');
+
+select t.make_member(17, 'Cancelled Chaya', 'L2'); select t.make_host(17);
+select t.make_meetup(17, 'Chaya event ' || g, 5, 'auto', false, now() - interval '10 days' - g * interval '1 day', 'cancelled') from generate_series(1, 3) g;
+update public.meetups set reviewed_at = now(), reviewed_by = t.u(1), first_published_at = starts_at - interval '1 day' where host_id = t.u(17);
+select t.ok(not app_private.is_established_host(t.u(17)), 'cancelled events do not count');
+
+select t.make_member(18, 'Self Reviewer Sia', 'L2'); select t.make_host(18);
+select t.make_meetup(18, 'Sia event ' || g, 5, 'auto', false, now() - interval '10 days' - g * interval '1 day', 'completed') from generate_series(1, 3) g;
+update public.meetups set reviewed_at = now(), reviewed_by = t.u(18), first_published_at = starts_at - interval '1 day' where host_id = t.u(18);
+select t.ok(not app_private.is_established_host(t.u(18)), 'events the host reviewed themselves do not count');
+
+select t.make_member(19, 'Rejected Rina', 'L2'); select t.make_host(19);
+select t.make_meetup(19, 'Rina event ' || g, 5, 'auto', false, now() + interval '10 days' + g * interval '1 day', 'rejected') from generate_series(1, 3) g;
+update public.meetups set reviewed_at = now(), reviewed_by = t.u(1) where host_id = t.u(19);
+select t.ok(not app_private.is_established_host(t.u(19)), 'rejected events do not count, even though an admin reviewed them');
+
+-- A suspended host's attendees are told, and the host can be reinstated
+select t.make_member(20, 'Suspended Sunil', 'L2'); select t.make_host(20);
+select t.make_meetup(20, 'Sunil outing', 10) as msus \gset
+insert into public.meetup_attendees (meetup_id, user_id, status) values (:'msus', t.u(4), 'approved'), (:'msus', t.u(5), 'requested'), (:'msus', t.u(6), 'cancelled');
+select t.as_user(t.u(1), 'admin', 'aal2');
+select public.admin_decide_host(t.u(20), 'suspend', null, 'Reports about conduct are being looked into.');
+reset role;
+select t.ok((select status = 'pending_approval' from public.meetups where id = :'msus'), 'suspending a host takes their upcoming events off the listing');
+select t.ok((select count(*) from public.notifications where entity_id = :'msus' and type = 'meetup_on_hold') = 2, 'people with a place or a pending request are told the event is on hold');
+select t.ok(exists (select 1 from public.notification_outbox where recipient_id = t.u(4) and channel = 'email' and payload ->> 'type' = 'meetup_on_hold'), 'the on-hold notice is also emailed');
+select t.as_user(t.u(1), 'admin', 'aal2');
+select public.admin_decide_host(t.u(20), 'approve', 'video_call', 'Reviewed again: the reports were unfounded.');
+reset role;
+select t.ok((select status = 'approved' from public.hosts where user_id = t.u(20)), 'a suspended host can be reinstated');
+
 
 rollback;

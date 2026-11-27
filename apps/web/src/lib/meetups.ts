@@ -197,13 +197,13 @@ export function buildEventJsonLd(
       name: meetup.venue_name,
       address: {
         '@type': 'PostalAddress',
-        streetAddress: meetup.locality,
         addressLocality: meetup.city_name,
         ...(region ? { addressRegion: region } : {}),
         addressCountry: 'IN',
       },
     },
-    organizer: { '@type': 'Person', name: meetup.host_display_name },
+    // Organization, not the host's name: keeps host identity out of machine-readable search data.
+    organizer: { '@type': 'Organization', name: 'ApnaCircle', url: siteOrigin.replace(/\/+$/, '') },
     maximumAttendeeCapacity: meetup.capacity,
     remainingAttendeeCapacity: spotsLeft(meetup),
     url: `${siteOrigin.replace(/\/+$/, '')}/${meetup.city_slug}/meetups/${meetup.slug}`,

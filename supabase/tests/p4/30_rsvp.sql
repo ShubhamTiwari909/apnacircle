@@ -108,7 +108,7 @@ select t.throws(format('select * from public.get_meetup_member_view(%L)', :'mid'
 reset role;
 select t.as_user(t.u(4));
 select t.ok((select spot_note from public.get_meetup_member_view(:'mid')) = 'Gate 2, near the ticket counter', 'an approved attendee sees the exact spot note');
-select t.ok((select attendees -> 0 ->> 'user_id' from public.get_meetup_member_view(:'mid')) is null, 'attendees never see internal user ids');
+select t.ok((select jsonb_array_length(attendees) > 0 and not exists (select 1 from jsonb_array_elements(attendees) e where e ->> 'user_id' is not null or e ? 'id') from public.get_meetup_member_view(:'mid')), 'attendees never see internal user ids (and the list is not just empty)');
 reset role;
 select t.as_user(t.u(2));
 select t.ok((select is_host and spot_note is not null from public.get_meetup_member_view(:'mid')), 'the host sees the spot note');
@@ -122,5 +122,20 @@ reset role;
 select t.as_anon();
 select t.ok((select attendee_count from public.list_public_meetups() where id = :'mid') = 2, 'public attendee count reflects approved attendees');
 reset role;
+
+-- A request can be days old: approval re-checks eligibility instead of trusting the join-time check
+select t.make_meetup(2, 'Approval recheck', 5, 'approval') as mid_r \gset
+select t.as_user(t.u(3)); select public.join_meetup(:'mid_r', 'attendee-ack-2026-11-26'); reset role;
+select t.as_user(t.u(5)); select public.join_meetup(:'mid_r', 'attendee-ack-2026-11-26'); reset role;
+select t.as_user(t.u(12)); select public.join_meetup(:'mid_r', 'attendee-ack-2026-11-26'); reset role;
+insert into public.user_sanctions (user_id, level, reason) values (t.u(3), 'suspension', 'sanctioned after requesting');
+insert into public.connection_blocks (blocker_id, blocked_id) values (t.u(5), t.u(2));
+update public.profiles set trust_level = 'Restricted' where id = t.u(12);
+select t.as_user(t.u(2));
+select t.throws(format('select public.host_decide_attendee(%L, %L, %L)', :'mid_r', t.u(3), 'approve'), 'P0403', 'a member sanctioned after requesting cannot be approved', '%can no longer join%');
+select t.throws(format('select public.host_decide_attendee(%L, %L, %L)', :'mid_r', t.u(5), 'approve'), 'P0403', 'a member who blocked the host after requesting cannot be approved', '%can no longer join%');
+select t.throws(format('select public.host_decide_attendee(%L, %L, %L)', :'mid_r', t.u(12), 'approve'), 'P0403', 'a member restricted after requesting cannot be approved', '%can no longer join%');
+reset role;
+select t.ok((select count(*) from public.meetup_attendees where meetup_id = :'mid_r' and status = 'requested') = 3, 'failed approvals leave the requests as they were (the host can decline them)');
 
 rollback;

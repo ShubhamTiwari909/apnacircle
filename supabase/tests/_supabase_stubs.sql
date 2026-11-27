@@ -68,3 +68,24 @@ grant usage on schema public to anon, authenticated, service_role;
 alter default privileges in schema public grant all on tables to anon, authenticated, service_role;
 alter default privileges in schema public grant all on functions to anon, authenticated, service_role;
 alter default privileges in schema public grant all on sequences to anon, authenticated, service_role;
+
+
+-- ---------------------------------------------------------------------------------------------
+-- pg_cron and pg_net stand-ins, so the scheduling migrations (004, 005, 008) apply and their
+-- privileges can be tested. Nothing is scheduled or sent: calls are only recorded.
+-- ---------------------------------------------------------------------------------------------
+create schema if not exists cron;
+create table if not exists cron.job (jobid bigserial primary key, jobname text unique, schedule text, command text);
+create or replace function cron.schedule(p_name text, p_schedule text, p_command text) returns bigint
+language sql as $$
+  insert into cron.job (jobname, schedule, command) values (p_name, p_schedule, p_command)
+  on conflict (jobname) do update set schedule = excluded.schedule, command = excluded.command
+  returning jobid
+$$;
+create or replace function cron.unschedule(p_jobid bigint) returns boolean
+language sql as $$ with d as (delete from cron.job where jobid = p_jobid returning 1) select exists (select 1 from d) $$;
+
+create schema if not exists net;
+create table if not exists net.http_calls (id bigserial primary key, url text, headers jsonb, body text);
+create or replace function net.http_post(url text, headers jsonb default '{}'::jsonb, body text default '{}') returns bigint
+language sql as $$ insert into net.http_calls (url, headers, body) values (url, headers, body) returning id $$;

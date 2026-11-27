@@ -54,12 +54,16 @@ reset role;
 select t.as_anon();
 select t.throws($$select public.join_meetup(gen_random_uuid(), 'x')$$, '42501', 'anon cannot call join_meetup');
 select t.throws($$select public.create_meetup(null,null,null,null,null,null,null,null,null,null,null,null,null)$$, '42501', 'anon cannot call create_meetup');
-select t.ok((select count(*) from public.list_public_meetups()) >= 0, 'anon can call list_public_meetups');
+select count(*) as listed_n from public.list_public_meetups() \gset
+select t.ok(:listed_n >= 0, 'anon can call list_public_meetups (it runs without a privilege error)');
+select t.throws($$select public.outbox_worker_trigger()$$, '42501', 'anon cannot run the outbox cron trigger');
 reset role;
 select t.as_user(t.u(4));
 select t.throws($$select public.enqueue_meetup_reminders()$$, '42501', 'members cannot run the reminder job');
 select t.throws($$select public.finalize_past_meetups()$$, '42501', 'members cannot run the meetup finaliser');
 select t.throws($$select public.update_trust_levels()$$, '42501', 'members cannot run the trust-level job');
+select t.throws($$select public.outbox_worker_trigger()$$, '42501', 'members cannot run the outbox cron trigger');
+select t.throws($$select public.nightly_jobs_trigger('update_trust_levels')$$, '42501', 'members cannot run the nightly cron trigger');
 select t.throws($$select app_private.enqueue_notification(auth.uid(), 'rsvp_approved', gen_random_uuid(), 'k')$$, '42501', 'members cannot reach app_private helpers');
 reset role;
 
@@ -67,5 +71,6 @@ reset role;
 select t.ok(pg_get_function_result('public.list_public_meetups'::regproc) !~ 'spot_note', 'list_public_meetups has no spot_note column');
 select t.ok(pg_get_function_result('public.get_public_meetup'::regproc) !~ 'spot_note', 'get_public_meetup has no spot_note column');
 select t.ok(pg_get_function_result('public.list_public_meetups'::regproc) !~ 'attendees', 'list_public_meetups has no attendee list');
+select t.ok(pg_get_function_result('public.get_public_meetup'::regproc) !~ 'cancel_reason', 'get_public_meetup has no cancel_reason column');
 
 rollback;
