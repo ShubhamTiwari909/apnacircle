@@ -8,7 +8,7 @@ You are continuing the ApnaCircle build (a city-based meetup and discovery platf
 
 ## Starting state
 
-- Repo: `apnacircle/` (its own git repo). Phase 4 is committed on branch `phase4-meetups-host-programme` (commit `2e65a90`), not yet merged or pushed. Create your branch from it, for example `phase5-content-studio`, and do not work on `main`.
+- Repo: `apnacircle/` (its own git repo). Phase 4 is committed on branch `phase4-meetups-host-programme` (commit `9378843`), pushed and open as a pull request into `main` (not merged yet). Create your branch from it, for example `phase5-content-studio`, and do not work on `main`.
 - Stack: pnpm monorepo, Astro 5 + React islands on Cloudflare Workers, Tailwind v4, Supabase. Content is Markdown in `content/{cities,categories,places,articles,faqs,landingPages}/`, loaded by `apps/web/src/content.config.ts` and validated by Zod schemas in `packages/types/src/content.ts` (every item has `locale: en`, `status`, `reviewedBy`, `reviewedAt`, `lastVerifiedAt`; places and articles also carry `imageRights`, places carry `sourceNote`, articles carry `firstHandNote`).
 - Checks that must stay green: `pnpm lint`, `pnpm typecheck`, `pnpm test` (44 unit tests), `pnpm build`, and `pnpm test:db` (needs local PostgreSQL 16+ binaries; 187 assertions). CI is `.github/workflows/ci.yml`; GitHub Actions are pinned by commit SHA with minimal `permissions`, so follow that style and reuse the existing SHAs.
 - Strings in the web app come from `packages/i18n/src/locales/en.json` via `t('key')`; a CI check fails on missing keys.
