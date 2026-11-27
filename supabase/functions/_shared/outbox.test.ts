@@ -10,7 +10,7 @@ describe('renderMessage', () => {
     'photo_held_review', 'banned_photo_match', 'banned_photo_near_match',
   ])('renders queued %s notifications without exposing case details', (type) => {
     const message = renderMessage({ type, reason: 'private case detail' }, SITE);
-    expect(message?.url).toBe(SITE);
+    expect(message?.url).toBe(new URL(SITE).origin);
     expect(message?.text).not.toContain('private case detail');
   });
 
