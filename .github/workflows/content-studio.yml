@@ -1,0 +1,131 @@
+name: Content Studio
+
+# Owner-run only. Drafts articles and FAQs with Gemini from a fact pack and opens a DRAFT pull
+# request. Nothing publishes without a merged, reviewed PR (see docs/adr/ADR-007).
+#
+# Kill switch (any one stops it): disable this workflow, set the repository variable
+# CONTENT_STUDIO_ENABLED to anything but "true", or delete the GEMINI_API_KEY secret.
+on:
+  workflow_dispatch:
+    inputs:
+      city:
+        description: City slug (for example saharanpur)
+        required: true
+        default: saharanpur
+        type: string
+      content_type:
+        description: Content type
+        required: true
+        type: choice
+        options:
+          - article
+          - faq
+      fact_pack:
+        description: Fact pack name, the file in content-studio/fact-packs/ without .yaml
+        required: true
+        type: string
+      topics:
+        description: Topics, one per line (at most 5 are used)
+        required: true
+        type: string
+      places:
+        description: Optional published place slugs to add as facts, comma separated
+        required: false
+        type: string
+      category:
+        description: Optional category slug
+        required: false
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: content-studio
+  cancel-in-progress: false
+
+jobs:
+  draft:
+    name: Draft content (owner only)
+    # Only a manual dispatch, only the owner, only from the default branch, only while enabled.
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      contains(fromJSON('["ShubhamTiwari909"]'), github.actor) &&
+      github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&
+      vars.CONTENT_STUDIO_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@a7487c7e89a18df4991f7f222e4898a00d66ddda # v4.1.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@cdca7365b2dadb8aad0a33bc7601856ffabcc48e # v4.3.0
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Count pages drafted in the last 7 days
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr list --label content-studio --state all --limit 100 \
+            --json createdAt,body > "$RUNNER_TEMP/recent-prs.json"
+
+      # Inputs reach the shell only through env vars, never through ${{ }} inside the script.
+      - name: Draft with Gemini
+        id: draft
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
+          CONTENT_STUDIO_ENABLED: ${{ vars.CONTENT_STUDIO_ENABLED }}
+          CITY: ${{ inputs.city }}
+          CONTENT_TYPE: ${{ inputs.content_type }}
+          FACT_PACK: ${{ inputs.fact_pack }}
+          TOPICS: ${{ inputs.topics }}
+          PLACES: ${{ inputs.places }}
+          CATEGORY: ${{ inputs.category }}
+        run: |
+          args=()
+          while IFS= read -r line; do
+            [ -n "${line//[[:space:]]/}" ] && args+=(--topic "$line")
+          done <<< "$TOPICS"
+          IFS=',' read -ra places <<< "$PLACES"
+          for place in "${places[@]}"; do
+            place="${place//[[:space:]]/}"
+            [ -n "$place" ] && args+=(--place "$place")
+          done
+          [ -n "$CATEGORY" ] && args+=(--category "$CATEGORY")
+          pnpm --filter @apnacircle/content-studio run draft \
+            --city "$CITY" --type "$CONTENT_TYPE" --fact-pack "$FACT_PACK" \
+            --recent-prs "$RUNNER_TEMP/recent-prs.json" \
+            --pr-body-file "$RUNNER_TEMP/pr-body.md" \
+            "${args[@]}"
+
+      - name: Open draft pull request
+        if: steps.draft.outputs.drafted != '' && steps.draft.outputs.drafted != '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DRAFTED: ${{ steps.draft.outputs.drafted }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          branch="content-studio/${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git add content content-studio/runs
+          git commit -m "content: AI-drafted pages from Content Studio (unreviewed)"
+          git push origin "$branch"
+          gh label create content-studio --description "AI-drafted content awaiting human review" \
+            --color 5319e7 2>/dev/null || true
+          gh pr create --draft --base "$DEFAULT_BRANCH" --head "$branch" \
+            --title "Content Studio: ${DRAFTED} AI-drafted page(s) for review" \
+            --body-file "$RUNNER_TEMP/pr-body.md" --label content-studio

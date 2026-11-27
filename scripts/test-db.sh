@@ -24,8 +24,12 @@ SQL_DIR="$ROOT/supabase"
 
 find_pg_bin() {
   if command -v initdb >/dev/null 2>&1; then dirname "$(command -v initdb)"; return; fi
-  for d in /opt/homebrew/opt/postgresql@17/bin /opt/homebrew/opt/postgresql@16/bin \
-           /usr/lib/postgresql/17/bin /usr/lib/postgresql/16/bin /usr/local/bin; do
+  # Any installed major version under /usr/lib/postgresql (newest first); GitHub's runner images
+  # ship the current PostgreSQL there, off PATH, and the version moves (16, 17, 18, ...).
+  local linux_bins
+  linux_bins="$(ls -d /usr/lib/postgresql/*/bin 2>/dev/null | sort -rV || true)"
+  for d in /opt/homebrew/opt/postgresql@18/bin /opt/homebrew/opt/postgresql@17/bin \
+           /opt/homebrew/opt/postgresql@16/bin $linux_bins /usr/local/bin; do
     if [ -x "$d/initdb" ]; then echo "$d"; return; fi
   done
   echo "initdb not found; install PostgreSQL 16+ or set TEST_DB_ADMIN_URL" >&2

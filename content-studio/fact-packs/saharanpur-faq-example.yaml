@@ -1,0 +1,12 @@
+# EXAMPLE fact pack (seed/demo data) for an FAQ draft.
+city: saharanpur
+contentType: faq
+facts:
+  - id: meetups-public
+    text: ApnaCircle meetups happen at public venues only, such as parks and cafes.
+    source: owner-note
+    verifiedOn: "2026-11-26"
+  - id: emergency-number
+    text: The all-India emergency number is 112.
+    source: https://www.112.gov.in/
+    verifiedOn: "2026-11-26"

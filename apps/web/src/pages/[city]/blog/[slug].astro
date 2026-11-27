@@ -43,6 +43,13 @@ const { Content } = await render(article);
         <span aria-hidden="true">&middot;</span>
         <span>{t('article.verifiedOn', { date: article.data.lastVerifiedAt })}</span>
       </div>
+      {
+        article.data.aiDraft && (
+          <p class="mt-2 text-xs text-[var(--ac-ink-muted)]">
+            {t('article.aiDisclosure', { reviewer: article.data.reviewedBy })}
+          </p>
+        )
+      }
     </header>
 
     <div class="article-body mt-6 space-y-4 text-sm leading-relaxed text-[var(--ac-ink-muted)] sm:text-base">

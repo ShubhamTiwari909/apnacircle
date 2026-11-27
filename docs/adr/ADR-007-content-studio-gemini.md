@@ -1,6 +1,6 @@
 # ADR-007: Content Studio (Gemini drafts through owner-run GitHub Action)
 
-- **Status:** Proposed (Phase 5). Three owner decisions are open, marked **[OWNER]**.
+- **Status:** Accepted (Phase 5). Design approved by the owner on 27 November 2026; implementation notes at the end.
 - **Date:** 27 November 2026
 - **Relates to:** plan sections 3.3, 7.6, 9.2, 14, 17; ADR-001 (content in Git)
 
@@ -76,11 +76,20 @@ Slug must match `^[a-z0-9]+(-[a-z0-9]+)*$` and be at most 80 characters; the wri
 ### 11. Model and quota
 The model name and free-tier quotas are read from Google's current documentation at implementation time and recorded in `content-studio/README.md` with the date checked. They are configuration (`GEMINI_MODEL`), not code. The client is a small `fetch` wrapper, which avoids a new runtime dependency.
 
-## Open owner decisions
+## Owner decisions (27 November 2026)
 
-- **[OWNER]** GitHub username(s) on the allowlist.
-- **[OWNER]** Typical draft size: words and sections (hard ceiling stays 1,200 words).
-- **[OWNER]** Whether published pages show "Drafted with AI assistance and reviewed by <name>". If yes, the page renders it from the `aiDraft` block plus `reviewedBy`.
+- **Allowlist:** `ShubhamTiwari909`.
+- **Draft size:** about 800 words in 4 to 5 sections as the prompt target; the hard ceiling stays 1,200 words.
+- **Disclosure:** yes. Pages with an `aiDraft` block render "Drafted with AI assistance and reviewed by <reviewedBy>" (never while `reviewedBy` is a sentinel).
+
+## Implementation notes (deviations from the proposal)
+
+- Scripts run with `tsx` because the shared `@apnacircle/types` package uses `.js`-suffixed imports that plain Node cannot resolve.
+- A third command, `isolation`, scans `apps/web/src`, `apps/web/public`, `apps/web/dist`, `packages` and `supabase` for Gemini references; CI runs it after the build and a unit test runs it on the source tree.
+- `faqContentObject` gained an optional `firstHandNote`, so AI-drafted FAQs also need a real first-hand note before the gate passes. The `aiDraft` block is on the shared `contentMetaSchema`, so it is valid on every collection.
+- The article body carries its FAQs under "Frequently asked questions"; `faq` drafts are separate one-question files in `content/faqs/`. Only articles render the AI disclosure line today (FAQ entries are not rendered on a page yet).
+- The weekly cap counts pages through a `content-studio-pages: N` marker in labelled PR bodies, including closed unmerged ones.
+- The Gemini model is not pinned. Google's rate-limit page no longer lists per-model free-tier numbers (it points to AI Studio), so `GEMINI_MODEL` is an owner-set repository variable.
 
 ## Consequences
 
