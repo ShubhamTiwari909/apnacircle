@@ -44,7 +44,7 @@ values (decode('<64 lowercase hex characters of the SHA-256 digest>', 'hex'))
 on conflict (singleton) do update set key_hash = excluded.key_hash;
 ```
 
-Hash the key without a trailing newline. The inbox is at `/me/moderation/feedback` and uses the active staff role and authenticator checks from the connection-abuse dashboard.
+Hash the key without a trailing newline. The inbox is at `/me/moderation/feedback` and uses the active staff role and authenticator checks from the connection-abuse dashboard. Migration `025_feedback_review.sql` adds status filters and the review workflow. Start a review before approving or dismissing a submission. Each final decision requires an internal note and appears in the review history.
 
 ## Outbox worker configuration
 `outbox-worker` returns **503 without claiming anything** unless every one of these is set: `CRON_SECRET`,

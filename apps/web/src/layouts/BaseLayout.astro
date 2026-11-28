@@ -1,9 +1,9 @@
 ---
 import '../styles/global.css';
 import { t } from '@apnacircle/i18n';
-import AnalyticsPreferences from '../components/AnalyticsPreferences.astro';
+import HeaderPreferences from '../components/HeaderPreferences.astro';
 import HeaderAccount from '../components/HeaderAccount.astro';
-import { CitySwitcher, isNavigationActive, MobileNavigation, PRIMARY_NAV_LINKS } from '@apnacircle/ui';
+import { CitySwitcher, isNavigationActive, MobileNavigation, PRIMARY_NAV_LINKS, ThemeSwitcher } from '@apnacircle/ui';
 import { serializeJsonLd } from '../lib/meetups.js';
 import { isPrivateNoindexPath } from '../lib/security-headers.js';
 import { articleJsonLd, breadcrumbJsonLd, publicUrl, siteJsonLd, socialImage, verificationToken, type Crumb } from '../lib/seo.js';
@@ -13,6 +13,7 @@ export interface Props {
   description?: string;
   noindex?: boolean;
   activeCitySlug?: string;
+  signedIn?: boolean;
   /** Path (no query string) that search engines should treat as the canonical URL. */
   canonicalPath?: string;
   breadcrumbs?: readonly Crumb[];
@@ -25,13 +26,16 @@ const {
   description = t('brand.description'),
   noindex = false,
   activeCitySlug = 'saharanpur',
+  signedIn,
   canonicalPath,
   breadcrumbs = [],
   articleAuthor,
   structuredData,
 } = Astro.props;
 
-const currentPath = Astro.url.pathname;
+const currentPath = Astro.originPathname;
+const sharedPage = Astro.isPrerendered || /\b(?:public|s-maxage)\b/i.test(Astro.response.headers.get('Cache-Control') ?? '');
+if (!sharedPage) Astro.response.headers.set('Cache-Control', 'private, no-store');
 const fullTitle = title === t('brand.name') ? title : `${title} · ${t('brand.name')}`;
 const site = Astro.site;
 const privatePage = isPrivateNoindexPath(Astro.originPathname);
@@ -56,7 +60,7 @@ if (site && canonical && indexable) {
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="icon" href="/apnacircle-icon-48.png" type="image/png" sizes="48x48" />
     <title>{fullTitle}</title>
     <meta name="description" content={description} />
     {!indexable && <meta name="robots" content={privatePage || unavailable || !site ? 'noindex, nofollow' : 'noindex, follow'} />}
@@ -97,8 +101,8 @@ if (site && canonical && indexable) {
           <span>{t('brand.name')}</span>
         </a>
 
-        <nav aria-label={t('nav.primary')} class="hidden lg:block">
-          <ul class="flex items-center gap-0.5 whitespace-nowrap xl:gap-1">
+        <nav aria-label={t('nav.primary')} class="hidden xl:block">
+          <ul class="flex items-center gap-0.5 whitespace-nowrap 2xl:gap-1">
             {PRIMARY_NAV_LINKS.map(({ href, key }) => {
               const isActive = isNavigationActive(currentPath, href);
               return (
@@ -106,7 +110,7 @@ if (site && canonical && indexable) {
                   <a
                     href={href}
                     aria-current={isActive ? 'page' : undefined}
-                    class={`inline-flex min-h-11 items-center rounded-lg px-2.5 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ac-accent)] xl:px-3 ${
+                    class={`inline-flex min-h-11 items-center rounded-lg px-2.5 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ac-accent)] 2xl:px-3 ${
                       isActive
                         ? 'bg-[var(--ac-accent-soft)] text-[var(--ac-accent)]'
                         : 'text-[var(--ac-ink)] hover:bg-[var(--ac-surface-muted)]'
@@ -122,9 +126,12 @@ if (site && canonical && indexable) {
 
         <div class="flex shrink-0 items-center gap-2">
           <CitySwitcher activeSlug={activeCitySlug} />
-          <HeaderAccount server:defer>
-            <HeaderAccount slot="fallback" guestOnly />
-          </HeaderAccount>
+          <div class="hidden xl:block"><ThemeSwitcher /></div>
+          {sharedPage ? (
+            <HeaderPreferences server:defer returnTo={currentPath}>
+              <HeaderAccount slot="fallback" signedIn={false} />
+            </HeaderPreferences>
+          ) : <HeaderPreferences returnTo={currentPath} signedIn={signedIn} />}
           <MobileNavigation currentPath={currentPath} />
         </div>
       </div>
@@ -200,8 +207,25 @@ if (site && canonical && indexable) {
         </div>
       </div>
     </footer>
-    {currentPath.replace(/\/$/, '') !== '/cookies' && (
-      <AnalyticsPreferences server:defer banner returnTo={currentPath} />
-    )}
   </body>
 </html>
+
+<script>
+  const themes = ['sage', 'blue', 'pink'];
+
+  function applyTheme(value: string | null) {
+    const theme = value && themes.includes(value) ? value : 'sage';
+    document.documentElement.dataset.theme = theme;
+    for (const select of document.querySelectorAll('select[data-theme-select]')) {
+      if (select instanceof HTMLSelectElement) select.value = theme;
+    }
+  }
+
+  try { applyTheme(localStorage.getItem('ac-theme')); } catch { applyTheme(null); }
+  document.addEventListener('change', (event) => {
+    const select = event.target;
+    if (!(select instanceof HTMLSelectElement) || !select.matches('[data-theme-select]')) return;
+    applyTheme(select.value);
+    try { localStorage.setItem('ac-theme', select.value); } catch { /* The current page can still change themes. */ }
+  });
+</script>

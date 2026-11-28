@@ -138,3 +138,46 @@ test('analytics starts only after consent and stops after withdrawal', async ({ 
   await visitMeetup();
   expect(await readAnalytics()).toEqual(expected);
 });
+
+test('People is active in desktop and mobile navigation, and the theme persists', async ({ page, request }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto('/people');
+  const header = page.getByRole('banner');
+  const nav = header.getByRole('navigation', { name: 'Main navigation' });
+  await expect(nav.getByRole('link', { name: 'People' })).toHaveAttribute('aria-current', 'page');
+  await expect(nav.getByRole('link', { name: 'Cities' })).not.toHaveAttribute('aria-current', 'page');
+
+  const theme = header.getByRole('combobox', { name: 'Theme' });
+  await theme.selectOption('blue');
+  await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(240, 245, 251)');
+  const favicon = await page.locator('link[rel="icon"]').getAttribute('href');
+  expect((await request.get(favicon ?? '/missing')).headers()['content-type']).toContain('image/png');
+  await page.goto('/saharanpur/people');
+  await expect(nav.getByRole('link', { name: 'People' })).toHaveAttribute('aria-current', 'page');
+  await expect(theme).toHaveValue('blue');
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await header.locator('summary[aria-label="Menu"]').press('Enter');
+  await expect(nav.getByRole('link', { name: 'People' })).toHaveAttribute('aria-current', 'page');
+  await theme.selectOption('pink');
+  await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(252, 241, 245)');
+  await page.reload();
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'pink');
+});
+
+test('moderators can review and approve feedback with a private decision note', async ({ page, context }) => {
+  const inboxPath = '/me/moderation/feedback';
+  expect((await page.goto(inboxPath))?.status()).toBe(401);
+  await context.addCookies([{ name: 'ac-member-session', value: 'fixture.staff.session', url: appOrigin }]);
+  await page.goto(inboxPath);
+  await page.getByRole('combobox', { name: 'Review status' }).selectOption('new');
+  await page.getByRole('button', { name: 'Apply filter' }).click();
+  await page.getByRole('link', { name: /Correct the park opening hours/ }).click();
+  await page.getByRole('button', { name: 'Start review' }).click();
+  await expect(page.getByText('In review', { exact: true })).toBeVisible();
+  await page.getByRole('textbox', { name: 'Internal decision note' }).fill('Opening times checked against the posted hours.');
+  await page.getByRole('button', { name: 'Approve feedback' }).click();
+  await expect(page.getByText('Approved', { exact: true })).toBeVisible();
+  await expect(page.getByText('Opening times checked against the posted hours.')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Approve feedback' })).toHaveCount(0);
+});

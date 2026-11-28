@@ -73,6 +73,7 @@ const signInError =
 <BaseLayout
   title={directoryPage ? t('directory.title') : t('people.cityTitle', { city: city.name })}
   activeCitySlug={city.slug}
+  signedIn={!showSignIn}
   noindex={true}
 >
   {

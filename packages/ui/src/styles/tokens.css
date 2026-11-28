@@ -32,6 +32,38 @@
   --ac-shadow-card: 0 1px 2px rgba(35, 55, 47, 0.06), 0 6px 18px rgba(35, 55, 47, 0.04);
 }
 
+[data-theme='blue'] {
+  --ac-bg: #f0f5fb;
+  --ac-surface: #fcfdff;
+  --ac-surface-muted: #e6edf8;
+  --ac-ink: #23354f;
+  --ac-ink-muted: #425673;
+  --ac-border: #d2ddeb;
+  --ac-border-strong: #7387a2;
+  --ac-accent: #315589;
+  --ac-accent-hover: #25446f;
+  --ac-accent-soft: #e0ebfb;
+  --ac-warm: #754f5b;
+  --ac-warm-soft: #f3e9ee;
+  --ac-shadow-card: 0 1px 2px rgba(35, 53, 79, 0.06), 0 6px 18px rgba(35, 53, 79, 0.04);
+}
+
+[data-theme='pink'] {
+  --ac-bg: #fcf1f5;
+  --ac-surface: #fffcfd;
+  --ac-surface-muted: #f7e9ef;
+  --ac-ink: #452d39;
+  --ac-ink-muted: #624855;
+  --ac-border: #e8d4df;
+  --ac-border-strong: #9c7789;
+  --ac-accent: #88415f;
+  --ac-accent-hover: #70324e;
+  --ac-accent-soft: #f5e1eb;
+  --ac-warm: #78513f;
+  --ac-warm-soft: #f7ebe1;
+  --ac-shadow-card: 0 1px 2px rgba(69, 45, 57, 0.06), 0 6px 18px rgba(69, 45, 57, 0.04);
+}
+
 html {
   background-color: var(--ac-bg);
   color: var(--ac-ink);
@@ -50,6 +82,29 @@ body {
 ::selection {
   background-color: var(--ac-accent-soft);
   color: var(--ac-ink);
+}
+
+/* Give single-select indicators a consistent inset across platforms. */
+select:where(:not([multiple]):not([size]), :not([multiple])[size='1']) {
+  appearance: none;
+  padding-inline-end: 2.25rem;
+  background-image: linear-gradient(45deg, transparent 50%, var(--ac-ink-muted) 50%),
+    linear-gradient(135deg, var(--ac-ink-muted) 50%, transparent 50%);
+  background-position: right 1.05rem center, right 0.75rem center;
+  background-repeat: no-repeat;
+  background-size: 0.3rem 0.3rem;
+}
+
+select:dir(rtl):where(:not([multiple]):not([size]), :not([multiple])[size='1']) {
+  background-position: left 0.75rem center, left 1.05rem center;
+}
+
+@media (forced-colors: active) {
+  select:where(:not([multiple]):not([size]), :not([multiple])[size='1']) {
+    appearance: auto;
+    background-image: none;
+    padding-inline-end: 0.75rem;
+  }
 }
 
 /* Visible keyboard focus across all interactive controls */

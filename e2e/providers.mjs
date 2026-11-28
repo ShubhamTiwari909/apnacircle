@@ -11,6 +11,16 @@ const projectKey = 'fixture-posthog';
 const { Response } = globalThis;
 const codes = new Map();
 const observations = { feedback: [], analytics: [] };
+const reviewFixture = {
+  id: '3027af97-3e97-4654-9b1b-307a50e645f8',
+  category: 'content_correction',
+  subject: 'Correct the park opening hours',
+  status: 'new',
+  created_at: new Date().toISOString(),
+  message: 'The park now opens earlier on weekdays.',
+  contact_email: null,
+  reviews: [],
+};
 
 export function installProviders() {
   Object.assign(process.env, {
@@ -70,6 +80,7 @@ export async function providerResponse(request) {
   const { pathname, searchParams } = new URL(request.url);
   const authorization = request.headers.get('authorization');
   const isMember = authorization === `Bearer ${memberSession}`;
+  const isStaff = authorization === 'Bearer fixture.staff.session';
 
   switch (pathname) {
     case '/__test/observations':
@@ -77,6 +88,8 @@ export async function providerResponse(request) {
         observations.feedback.length = 0;
         observations.analytics.length = 0;
         codes.clear();
+        reviewFixture.status = 'new';
+        reviewFixture.reviews = [];
       }
       return Response.json(observations);
     case '/auth/v1/authorize': {
@@ -119,6 +132,28 @@ export async function providerResponse(request) {
         ? Response.json(publicTeaser) : new Response(null, { status: 401 });
     case '/rest/v1/rpc/get_public_meetup':
       return Response.json((await request.json()).p_slug === meetup.slug ? [meetup] : []);
+    case '/rest/v1/rpc/list_site_feedback': {
+      if (!isStaff) return new Response(null, { status: 403 });
+      const { p_status: status } = await request.json();
+      const { id, subject, category, status: current, created_at } = reviewFixture;
+      return Response.json({ items: !status || status === current ? [{ id, subject, category, status: current, created_at }] : [], nextCursor: null });
+    }
+    case '/rest/v1/rpc/get_site_feedback': {
+      if (!isStaff) return new Response(null, { status: 403 });
+      const { p_id: id } = await request.json();
+      return id === reviewFixture.id ? Response.json(reviewFixture) : new Response(null, { status: 404 });
+    }
+    case '/rest/v1/rpc/review_site_feedback': {
+      if (!isStaff) return new Response(null, { status: 403 });
+      const { p_id: id, p_expected_status: expected, p_decision: decision, p_note: reason } = await request.json();
+      if (id !== reviewFixture.id) return new Response(null, { status: 404 });
+      if (expected !== reviewFixture.status) return new Response(null, { status: 409 });
+      reviewFixture.status = { start: 'triaged', approve: 'resolved', dismiss: 'closed' }[decision];
+      reviewFixture.reviews.unshift({
+        id: randomUUID(), action: decision, reason, reviewer_name: 'Test moderator', created_at: new Date().toISOString(),
+      });
+      return new Response(null, { status: 204 });
+    }
     case '/rest/v1/rpc/submit_site_feedback': {
       const { p_write_key: key, ...fields } = await request.json();
       if (key !== writeKey) return new Response(null, { status: 403 });

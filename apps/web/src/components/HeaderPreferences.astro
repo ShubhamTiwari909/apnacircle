@@ -1,0 +1,13 @@
+---
+import AnalyticsPreferences from './AnalyticsPreferences.astro';
+import HeaderAccount from './HeaderAccount.astro';
+
+interface Props {
+  returnTo: string;
+  signedIn?: boolean | undefined;
+}
+const { returnTo, signedIn } = Astro.props;
+---
+
+<HeaderAccount signedIn={signedIn} />
+{returnTo.replace(/\/$/, '') !== '/cookies' && <AnalyticsPreferences banner returnTo={returnTo} />}

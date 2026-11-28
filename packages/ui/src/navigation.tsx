@@ -17,12 +17,18 @@ export const PRIMARY_NAV_LINKS = [
 ];
 
 export function isNavigationActive(pathname: string, href: string): boolean {
+  const [, section, subsection] = pathname.split('/');
+  if (section === 'cities') return href === '/saharanpur';
+  if (CITIES.some((city) => city.slug === section)) {
+    const cityRoute = ['people', 'places', 'meetups'].includes(subsection ?? '') ? `/${subsection}` : '/saharanpur';
+    return href === cityRoute;
+  }
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
 export function MobileNavigation({ currentPath }: MobileNavigationProps) {
   return (
-    <details name="site-header-menu" className="relative lg:hidden">
+    <details name="site-header-menu" className="relative xl:hidden">
       <summary
         aria-label={t('nav.menuLabel')}
         className="flex size-11 cursor-pointer list-none items-center justify-center rounded-xl border border-[var(--ac-border)] text-[var(--ac-ink)] hover:bg-[var(--ac-surface-muted)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ac-accent)] [&::-webkit-details-marker]:hidden"
@@ -53,6 +59,9 @@ export function MobileNavigation({ currentPath }: MobileNavigationProps) {
             );
           })}
         </ul>
+        <div className="mt-1 border-t border-[var(--ac-border)] px-2 pt-2">
+          <ThemeSwitcher />
+        </div>
       </nav>
     </details>
   );
@@ -107,5 +116,21 @@ export function LanguageSwitcher() {
       <span aria-hidden="true">&middot;</span>
       <span>{t('switcher.hindiSoon')}</span>
     </div>
+  );
+}
+
+export function ThemeSwitcher() {
+  return (
+    <label className="flex items-center justify-between gap-2 whitespace-nowrap px-1 text-sm font-medium text-[var(--ac-ink-muted)]">
+      <span>{t('theme.label')}</span>
+      <select
+        data-theme-select
+        className="min-h-11 rounded-xl border border-[var(--ac-border-strong)] bg-[var(--ac-surface)] px-2 text-sm font-semibold text-[var(--ac-ink)]"
+      >
+        <option value="sage">{t('theme.sage')}</option>
+        <option value="blue">{t('theme.blue')}</option>
+        <option value="pink">{t('theme.pink')}</option>
+      </select>
+    </label>
   );
 }

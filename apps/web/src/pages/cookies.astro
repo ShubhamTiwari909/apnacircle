@@ -2,6 +2,9 @@
 import AnalyticsPreferences from '../components/AnalyticsPreferences.astro';
 import PolicyDocument from '../components/PolicyDocument.astro';
 import { t } from '@apnacircle/i18n';
+
+export const prerender = false;
+Astro.response.headers.set('Cache-Control', 'private, no-store');
 ---
 
 <PolicyDocument
@@ -10,6 +13,6 @@ import { t } from '@apnacircle/i18n';
   description="Information on essential cookies, local storage, and consent-gated analytics."
 >
   <div slot="preferences" id="analytics">
-    <AnalyticsPreferences server:defer returnTo="/cookies#analytics" />
+    <AnalyticsPreferences returnTo="/cookies#analytics" />
   </div>
 </PolicyDocument>
