@@ -13,7 +13,7 @@ import {
   type DirectoryPage,
 } from '../../lib/people-directory.js';
 import { fetchSignedProfilePhotoUrls } from '../../lib/profile-photo-links.js';
-import { PROFILE_AUTH_PATH, PROFILE_PATH, PROFILE_SESSION } from '../../lib/profile-editor.js';
+import { ONBOARDING_PATH, PROFILE_AUTH_PATH, PROFILE_SESSION } from '../../lib/profile-editor.js';
 
 export const prerender = false;
 
@@ -108,7 +108,7 @@ const signInError =
         {needsMembership && (
           <div class="mt-5">
             <p class="text-sm">{t('profile.signedInMembershipRequired')}</p>
-            <a href={PROFILE_PATH} class="inline-flex min-h-11 items-center text-sm font-semibold underline underline-offset-4">{t('nav.account')}</a>
+            <a href={ONBOARDING_PATH} class="inline-flex min-h-11 items-center text-sm font-semibold underline underline-offset-4">{t('onboard.title')}</a>
           </div>
         )}
 

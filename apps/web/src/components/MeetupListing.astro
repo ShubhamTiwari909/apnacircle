@@ -3,6 +3,7 @@ import { t } from '@apnacircle/i18n';
 import { CATEGORIES, MEETUP_DATE_FILTERS, type PublicMeetup } from '@apnacircle/types';
 import { EmptyStateCard, ErrorStateCard, MeetupCard } from '@apnacircle/ui';
 import { formatMeetupWhen, isFull, spotsLeft } from '../lib/meetups.js';
+import { HOST_PATH } from '../lib/profile-editor.js';
 
 export interface Props {
   /** Page the filter form submits to (no query string). */
@@ -61,6 +62,7 @@ const whenLabels: Record<(typeof MEETUP_DATE_FILTERS)[number], string> = {
       {t('meetups.filterReset')}
     </a>
   ) : null}
+  <a href={HOST_PATH} class="workspace-link">{t('host.publicLink')}</a>
 </form>
 
 <section class="mt-8" aria-live="polite">

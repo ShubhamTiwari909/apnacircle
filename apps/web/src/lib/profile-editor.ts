@@ -4,6 +4,11 @@ import type { FetchLike, PublicApiConfig } from './meetups.js';
 export const PROFILE_PATH = '/me/profile';
 export const CONNECTION_CONTACT_PATH = `${PROFILE_PATH}/connections/contact`;
 export const CONNECTION_ABUSE_PATH = '/me/moderation/connection-abuse';
+export const ONBOARDING_PATH = '/me/onboarding';
+export const HOST_PATH = '/me/host';
+export const CREATE_MEETUP_PATH = '/me/host/meetups/new';
+export const HOST_REVIEW_PATH = '/me/admin/review';
+export const STAFF_AUTH_PATH = '/me/staff/authenticator';
 export const FEEDBACK_INBOX_PATH = '/me/moderation/feedback';
 export const CONTACT_ID_PATTERN = /^[a-f0-9]{32}$/;
 export const PROFILE_AUTH_PATH = '/me/profile/auth';
@@ -17,6 +22,7 @@ export function isMemberProfileId(id: string): boolean {
 }
 
 export function memberSignInReturnPath(value: string | null | undefined): string | null {
+  if (value && [ONBOARDING_PATH, HOST_PATH, CREATE_MEETUP_PATH, HOST_REVIEW_PATH, STAFF_AUTH_PATH].includes(value)) return value;
   if (value === '/people' || value === CONNECTION_ABUSE_PATH || value === FEEDBACK_INBOX_PATH || value === `${PROFILE_PATH}/connections` || value === `${PROFILE_PATH}/connections/settings`) return value;
   if (!value) return null;
   if (value.startsWith(`${CONNECTION_CONTACT_PATH}/`) && CONTACT_ID_PATTERN.test(value.slice(CONNECTION_CONTACT_PATH.length + 1))) return value;

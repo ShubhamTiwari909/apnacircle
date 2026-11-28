@@ -1,0 +1,80 @@
+---
+import { t } from '@apnacircle/i18n';
+import BaseLayout from '../../../layouts/BaseLayout.astro';
+import { enrollStaffAuthenticator, getStaffFactors, mfaForm, verifyStaffAuthenticator } from '../../../lib/connection-abuse.js';
+import { readConnectionForm } from '../../../lib/connection-requests.js';
+import { CONNECTION_ABUSE_PATH, FEEDBACK_INBOX_PATH, HOST_REVIEW_PATH, profileCookieOptions, PROFILE_AUTH_PATH,
+  PROFILE_SESSION, PROFILE_SESSION_PATH, STAFF_AUTH_PATH } from '../../../lib/profile-editor.js';
+import { getRuntimePublicApiConfig } from '../../../lib/server-config.js';
+
+export const prerender = false;
+const destinations = [FEEDBACK_INBOX_PATH, HOST_REVIEW_PATH, CONNECTION_ABUSE_PATH];
+const next = Astro.url.searchParams.get('returnTo') ?? '';
+const returnTo = destinations.includes(next) ? next : FEEDBACK_INBOX_PATH;
+const token = Astro.cookies.get(PROFILE_SESSION)?.value;
+const config = getRuntimePublicApiConfig();
+const factors = config && token ? await getStaffFactors(config, token) : null;
+const staff = factors?.ok && factors.staff ? factors : null;
+const signIn = PROFILE_AUTH_PATH + '?' + new URLSearchParams({ start: '1', returnTo: STAFF_AUTH_PATH });
+const pendingCookie = 'ac-staff-mfa-pending';
+const opts = profileCookieOptions(Astro.url, STAFF_AUTH_PATH);
+let pending = Astro.cookies.get(pendingCookie)?.value;
+let secret: string | undefined;
+let error: 'enrol' | 'verify' | undefined;
+if (!staff) Astro.response.status = !token || factors?.ok === false && factors.status === 401 ? 401 : factors?.ok ? 403 : 503;
+if (Astro.request.method === 'POST' && staff && config && token) {
+  const form = await readConnectionForm(Astro.request, Astro.url.origin);
+  if (form instanceof Response) return form;
+  if (form.get('action') === 'enrol' && !staff.factors.length) {
+    const enrolled = await enrollStaffAuthenticator(config, token);
+    if (enrolled.ok) {
+      pending = enrolled.data.id;
+      secret = enrolled.data.totp.secret;
+      Astro.cookies.set(pendingCookie, pending, { ...opts, maxAge: 900 });
+    } else {
+      error = 'enrol';
+      Astro.response.status = enrolled.status;
+    }
+  } else if (form.get('action') === 'verify') {
+    const verifiedForm = mfaForm.safeParse({ factor: form.get('factor'), code: form.get('code') });
+    if (verifiedForm.success) {
+      const result = await verifyStaffAuthenticator(config, token, verifiedForm.data, pending);
+      if (result.ok) {
+        Astro.cookies.delete(pendingCookie, opts);
+        Astro.cookies.set(PROFILE_SESSION, result.data.access_token, { ...profileCookieOptions(Astro.url, PROFILE_SESSION_PATH), maxAge: Math.min(result.data.expires_in, 3600) });
+        return Astro.redirect(returnTo, 303);
+      }
+      Astro.response.status = result.status;
+    } else Astro.response.status = 422;
+    error = 'verify';
+  }
+}
+---
+
+<BaseLayout title={t('staffAuth.title')} noindex>
+  <section class="mx-auto max-w-lg">
+    <h1 class="text-3xl font-bold tracking-tight">{t('staffAuth.title')}</h1>
+    {Astro.response.status === 401 && !staff ? <a class="workspace-button mt-5" href={signIn}>{t('profile.signIn')}</a>
+      : !staff ? <p class="mt-4">{t('staffAuth.required')}</p>
+      : (
+        <>
+          {error && <p class="mt-4 text-sm text-[var(--ac-danger)]" role="alert">{t(`staffAuth.error.${error}`)}</p>}
+          {secret && <div class="workspace-panel mt-5">
+            <p class="text-sm">{t('staffAuth.addKey')}</p>
+            <code class="mt-2 block break-all font-semibold">{secret}</code>
+          </div>}
+          {(staff.factors.length > 0 || pending) && <form method="post" class="workspace-form mt-5">
+            <input type="hidden" name="action" value="verify" />
+            {staff.factors.length > 1 ? <label>{t('abuse.factor')}<select name="factor">
+              {staff.factors.map((factor, index) => <option value={factor.id}>{factor.friendly_name || t('abuse.factorNumber', { number: index + 1 })}</option>)}
+            </select></label> : <input type="hidden" name="factor" value={staff.factors[0]?.id ?? pending} />}
+            <label>{t('abuse.code')}<input name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" required maxlength="6" /></label>
+            <button class="workspace-button">{t('abuse.verify')}</button>
+          </form>}
+          {!staff.factors.length && !secret && <form method="post" class="mt-5">
+            <button name="action" value="enrol" class={pending ? 'workspace-secondary' : 'workspace-button'}>{t(pending ? 'staffAuth.startAgain' : 'staffAuth.enrol')}</button>
+          </form>}
+        </>
+      )}
+  </section>
+</BaseLayout>

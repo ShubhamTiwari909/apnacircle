@@ -9,7 +9,7 @@ import {
 import { readConnectionForm } from '../../../lib/connection-requests.js';
 import { formatMeetupWhen } from '../../../lib/meetups.js';
 import {
-  CONNECTION_ABUSE_PATH, FEEDBACK_INBOX_PATH, profileCookieOptions, PROFILE_AUTH_PATH, PROFILE_SESSION, PROFILE_SESSION_PATH,
+  CONNECTION_ABUSE_PATH, FEEDBACK_INBOX_PATH, STAFF_AUTH_PATH, profileCookieOptions, PROFILE_AUTH_PATH, PROFILE_SESSION, PROFILE_SESSION_PATH,
 } from '../../../lib/profile-editor.js';
 
 export const prerender = false;
@@ -129,7 +129,8 @@ function decisionLabel(decision: string, source: string) {
           </div>
           <button class={primaryButton}>{t('abuse.verify')}</button>
         </form>
-      ) : <p class="mt-4 text-sm">{t(staff?.ok && staff.staff ? 'abuse.enrol' : 'abuse.forbidden')}</p>
+      ) : staff?.ok && staff.staff ? <a class="mt-4 inline-flex min-h-11 items-center font-semibold underline" href={STAFF_AUTH_PATH + '?' + new URLSearchParams({ returnTo: CONNECTION_ABUSE_PATH })}>{t('staffAuth.enrol')}</a>
+        : <p class="mt-4 text-sm">{t('abuse.forbidden')}</p>
     ) : selected ? (
       <>
         {updated && <p role="status" class="mt-4 text-sm font-semibold">{t('abuse.saved')}</p>}

@@ -1,0 +1,86 @@
+---
+import { t } from '@apnacircle/i18n';
+import HostReviewActions from '../../../components/HostReviewActions.astro';
+import BaseLayout from '../../../layouts/BaseLayout.astro';
+import { readConnectionForm } from '../../../lib/connection-requests.js';
+import { getHostReview, hostReviewForm, issueMemberInvite, reviewHostItem } from '../../../lib/hosting.js';
+import { formatMeetupWhen } from '../../../lib/meetups.js';
+import { HOST_REVIEW_PATH, PROFILE_AUTH_PATH, PROFILE_SESSION, STAFF_AUTH_PATH } from '../../../lib/profile-editor.js';
+import { getRuntimePublicApiConfig } from '../../../lib/server-config.js';
+
+export const prerender = false;
+const token = Astro.cookies.get(PROFILE_SESSION)?.value;
+const config = getRuntimePublicApiConfig();
+const result = config && token ? await getHostReview(config, token) : null;
+const queue = result?.ok ? result.data : null;
+const status = result?.ok ? 200 : result?.status ?? (token ? 503 : 401);
+Astro.response.status = status;
+const returnTo = HOST_REVIEW_PATH;
+const signIn = PROFILE_AUTH_PATH + '?' + new URLSearchParams({ start: '1', returnTo });
+const verify = STAFF_AUTH_PATH + '?' + new URLSearchParams({ returnTo });
+let invite: string | undefined;
+let error = false;
+if (Astro.request.method === 'POST' && config && token && queue) {
+  const form = await readConnectionForm(Astro.request, Astro.url.origin);
+  if (form instanceof Response) return form;
+  if (form.get('type') === 'invite') {
+    const issued = await issueMemberInvite(config, token);
+    if (issued.ok) invite = issued.code;
+    else {
+      error = true;
+      Astro.response.status = issued.status;
+    }
+  } else {
+    const parsed = hostReviewForm.safeParse({
+      type: form.get('type'), id: form.get('id'), decision: form.get('decision'),
+      method: form.get('method') ?? '', note: form.get('note'),
+    });
+    if (parsed.success) {
+      const updated = await reviewHostItem(config, token, parsed.data);
+      if (updated.ok) return Astro.redirect(HOST_REVIEW_PATH + '?saved=1', 303);
+      Astro.response.status = updated.status;
+    } else Astro.response.status = 422;
+    error = true;
+  }
+}
+---
+
+<BaseLayout title={t('host.reviewTitle')} noindex>
+  <section class="mx-auto max-w-3xl">
+    <h1 class="text-3xl font-bold tracking-tight">{t('host.reviewTitle')}</h1>
+    {status === 401 ? <a class="workspace-button mt-5" href={signIn}>{t('profile.signIn')}</a>
+      : status === 428 ? <a class="workspace-button mt-5" href={verify}>{t('feedbackInbox.verify')}</a>
+      : !queue ? <p class="mt-4">{t(status === 403 ? 'host.adminRequired' : 'host.unavailable')}</p>
+      : (
+        <>
+          {error && <p role="alert" class="mt-4 font-semibold text-[var(--ac-danger)]">{t('host.reviewError')}</p>}
+          {Astro.url.searchParams.get('saved') === '1' && <p role="status" class="mt-4 font-semibold text-[var(--ac-success)]">{t('feedbackInbox.saved')}</p>}
+          <form method="post" class="mt-4">
+            <button class="workspace-secondary" name="type" value="invite">{t('host.createInvite')}</button>
+          </form>
+          {invite && <p role="status" class="mt-3 break-words">{t('host.inviteReady')} <code>{invite}</code></p>}
+          <h2 class="mt-8 text-xl font-semibold">{t('host.hostQueue')}</h2>
+          {!queue.host_applications.length && <p class="mt-2 text-sm text-[var(--ac-ink-muted)]">{t('host.noHostApplications')}</p>}
+          {queue.host_applications.map((host) => <article class="workspace-panel mt-4">
+            <h3 class="break-words text-lg font-semibold">{host.display_name}</h3>
+            {host.organisation_name && <p class="mt-1 break-words text-sm text-[var(--ac-ink-muted)]">{host.organisation_name}</p>}
+            <p class="mt-2 whitespace-pre-wrap break-words text-sm">{host.about}</p>
+            {host.social_profile_url && <p class="mt-2 break-all text-sm">{host.social_profile_url}</p>}
+            {host.local_reference && <p class="mt-2 whitespace-pre-wrap break-words text-sm">{host.local_reference}</p>}
+            <HostReviewActions kind="host" id={host.user_id} />
+          </article>)}
+          <h2 class="mt-8 text-xl font-semibold">{t('host.meetupQueue')}</h2>
+          {!queue.meetups.length && <p class="mt-2 text-sm text-[var(--ac-ink-muted)]">{t('host.noMeetups')}</p>}
+          {queue.meetups.map((meetup) => <article class="workspace-panel mt-4">
+            <h3 class="break-words text-lg font-semibold">{meetup.title}</h3>
+            <p class="mt-1 break-words text-sm text-[var(--ac-ink-muted)]">{meetup.host_name} · {formatMeetupWhen(meetup.starts_at, meetup.ends_at)}</p>
+            <p class="mt-1 break-words text-sm">{meetup.venue_name} · {meetup.locality} · {t('host.capacity')}: {meetup.capacity}</p>
+            {meetup.women_only && <p class="mt-1 text-sm">{t('meetups.womenOnlyBadge')}</p>}
+            <p class="mt-2 whitespace-pre-wrap break-words text-sm">{meetup.description}</p>
+            {meetup.spot_note && <p class="mt-2 whitespace-pre-wrap break-words text-sm">{t('host.spot')}: {meetup.spot_note}</p>}
+            <HostReviewActions kind="meetup" id={meetup.meetup_id} />
+          </article>)}
+        </>
+      )}
+  </section>
+</BaseLayout>

@@ -16,6 +16,7 @@ export default defineConfig({
       APNACIRCLE_ADAPTER: 'vercel',
       ASTRO_TELEMETRY_DISABLED: '1',
       VERCEL_ENV: 'production',
+      PUBLIC_TURNSTILE_SITE_KEY: 'fixture-site-key',
       PUBLIC_SITE_URL: 'http://127.0.0.1:4173',
     },
     url: 'http://127.0.0.1:4173/__test/observations',

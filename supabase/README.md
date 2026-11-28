@@ -274,3 +274,11 @@ by priority and SLA deadline, and supports filters for case type and status. Mod
 start reviews, confirm restrictions, and uphold or dismiss member reports with a note.
 Queue reads, case reads, and decisions are audited. Review notes stay in the dashboard, and
 outcome notifications use the existing generic template.
+
+## Member and host workflows
+
+Apply migration `026_member_and_host_workflows.sql`. Configure a separate 64-character lowercase hex `ONBOARDING_WRITE_KEY` in the web server environment and store its SHA-256 digest in `app_private.onboarding_config.key_hash`, using the same digest setup described for feedback. Onboarding also needs the site's existing Turnstile key pair and a verified Google identity.
+
+An MFA-verified administrator issues a single-use, seven-day member invite from `/me/admin/review`. To bootstrap the first staff account, an operator can create a seven-day account-bound invitation in `app_private.onboarding_account_invites` for a verified Supabase Auth user ID, and assign that specific account an authorised staff role in `auth.users.raw_app_meta_data`. The recipient completes normal member onboarding and sets up native Supabase TOTP at `/me/staff/authenticator`.
+
+Members apply at `/me/host`. Approved hosts create new events at `/me/host/meetups/new`. Admins review host applications and pending events at `/me/admin/review`. A different admin must approve the host and their first three qualifying meetups. The existing public-venue and women-only review rules still apply.

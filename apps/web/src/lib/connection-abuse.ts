@@ -83,14 +83,26 @@ export async function getStaffFactors(config: PublicApiConfig, token: string) {
     factors: result.data?.factors?.filter((factor) => factor.factor_type === 'totp' && factor.status === 'verified') ?? [] };
 }
 
-export async function verifyStaffAuthenticator(config: PublicApiConfig, token: string, form: z.output<typeof mfaForm>) {
+export async function verifyStaffAuthenticator(config: PublicApiConfig, token: string, form: z.output<typeof mfaForm>, pending?: string) {
   const staff = await getStaffFactors(config, token);
   if (!staff.ok) return staff;
-  if (!staff.staff || !staff.factors.some((factor) => factor.id === form.factor)) return { ok: false as const, status: 403 };
+  const verified = staff.factors.some((factor) => factor.id === form.factor);
+  const enrolmentInProgress = staff.factors.length === 0 && form.factor === pending;
+  if (!staff.staff || (!verified && !enrolmentInProgress)) return { ok: false as const, status: 403 };
   const path = `/auth/v1/factors/${form.factor}`;
   const challenge = await authenticatedRequest(config, token, `${path}/challenge`,
     async (response) => z.object({ id: z.guid() }).parse(await response.json()), {});
   if (!challenge.ok) return challenge;
   return authenticatedRequest(config, token, `${path}/verify`, async (response) => sessionSchema.parse(await response.json()),
     { challenge_id: challenge.data.id, code: form.code });
+}
+
+export async function enrollStaffAuthenticator(config: PublicApiConfig, token: string) {
+  const staff = await getStaffFactors(config, token);
+  if (!staff.ok) return staff;
+  if (!staff.staff || staff.factors.length) return { ok: false as const, status: 403 };
+  const enrolment = z.object({ id: z.guid(), totp: z.object({ secret: z.string().regex(/^[A-Z2-7]+=*$/i) }) });
+  return authenticatedRequest(config, token, '/auth/v1/factors', async (response) => enrolment.parse(await response.json()), {
+    factor_type: 'totp', issuer: 'ApnaCircle',
+  });
 }

@@ -4,7 +4,7 @@ import BaseLayout from '../../../layouts/BaseLayout.astro';
 import { feedbackInboxQuery, feedbackReviewForm, feedbackStatuses, formatFeedbackReference, getFeedback, listFeedback, reviewFeedback } from '../../../lib/feedback.js';
 import { readConnectionForm } from '../../../lib/connection-requests.js';
 import { formatMeetupWhen } from '../../../lib/meetups.js';
-import { CONNECTION_ABUSE_PATH, FEEDBACK_INBOX_PATH, PROFILE_AUTH_PATH, PROFILE_SESSION } from '../../../lib/profile-editor.js';
+import { FEEDBACK_INBOX_PATH, PROFILE_AUTH_PATH, PROFILE_SESSION, STAFF_AUTH_PATH } from '../../../lib/profile-editor.js';
 import { getRuntimePublicApiConfig } from '../../../lib/server-config.js';
 
 export const prerender = false;
@@ -75,7 +75,7 @@ const link = 'inline-flex min-h-11 items-center text-sm font-semibold text-[var(
     ) : status === 403 ? (
       <p class="mt-4 text-sm">{t('feedbackInbox.forbidden')}</p>
     ) : status === 428 ? (
-      <a href={CONNECTION_ABUSE_PATH} class:list={[link, 'mt-3']}>{t('feedbackInbox.verify')}</a>
+      <a href={STAFF_AUTH_PATH + '?' + new URLSearchParams({ returnTo: FEEDBACK_INBOX_PATH })} class:list={[link, 'mt-3']}>{t('feedbackInbox.verify')}</a>
     ) : item ? (
       <>
       {saved && <p role="status" class="mt-4 text-sm font-semibold text-[var(--ac-success)]">{t('feedbackInbox.saved')}</p>}

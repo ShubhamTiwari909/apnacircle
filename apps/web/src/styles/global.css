@@ -2,3 +2,55 @@
 @import "@apnacircle/ui/tokens.css";
 @source "../../../../packages/ui/src";
 @source "../../node_modules/@zentauri-ui/zentauri-components";
+
+/* All three site palettes are light. Library dark utilities require an explicit dark theme. */
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
+
+:root {
+  color-scheme: light;
+  --zui-fg: var(--ac-ink);
+  --zui-fg-muted: var(--ac-ink-muted);
+  --zui-surface: var(--ac-surface);
+  --zui-surface-soft: var(--ac-surface-muted);
+  --zui-border: var(--ac-border);
+}
+
+.workspace-panel, .workspace-form {
+  @apply rounded-xl border border-[var(--ac-border)] bg-[var(--ac-surface)] p-4 sm:p-6;
+}
+
+.workspace-form {
+  @apply space-y-4;
+}
+
+.workspace-form label {
+  @apply block text-sm font-semibold;
+}
+
+.workspace-form :is(input:not([type='checkbox'], [type='hidden']), select, textarea) {
+  @apply mt-1 block min-h-11 w-full rounded-xl border border-[var(--ac-border-strong)] bg-[var(--ac-surface)] px-3 py-2 text-base text-[var(--ac-ink)];
+}
+
+.workspace-form select {
+  padding-inline-end: 2.25rem;
+}
+
+.workspace-form input[type='checkbox'] {
+  @apply size-4 align-middle accent-[var(--ac-accent)];
+}
+
+.workspace-button, .workspace-secondary, .workspace-link {
+  @apply inline-flex min-h-11 items-center text-sm font-semibold;
+}
+
+.workspace-button {
+  @apply rounded-xl bg-[var(--ac-accent)] px-4 text-white hover:bg-[var(--ac-accent-hover)];
+}
+
+.workspace-secondary {
+  @apply rounded-xl border border-[var(--ac-border-strong)] px-4 hover:bg-[var(--ac-surface-muted)];
+}
+
+.workspace-link {
+  @apply text-[var(--ac-accent)] underline underline-offset-4;
+}

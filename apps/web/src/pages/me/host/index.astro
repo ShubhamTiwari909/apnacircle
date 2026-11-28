@@ -1,0 +1,75 @@
+---
+import { t } from '@apnacircle/i18n';
+import BaseLayout from '../../../layouts/BaseLayout.astro';
+import { readConnectionForm } from '../../../lib/connection-requests.js';
+import { applyToHost, getHostWorkspace, hostForm } from '../../../lib/hosting.js';
+import { formatMeetupWhen } from '../../../lib/meetups.js';
+import { CREATE_MEETUP_PATH, FEEDBACK_INBOX_PATH, HOST_PATH, HOST_REVIEW_PATH, ONBOARDING_PATH, PROFILE_AUTH_PATH, PROFILE_SESSION } from '../../../lib/profile-editor.js';
+import { getRuntimePublicApiConfig } from '../../../lib/server-config.js';
+
+export const prerender = false;
+const token = Astro.cookies.get(PROFILE_SESSION)?.value;
+const config = getRuntimePublicApiConfig();
+const result = config && token ? await getHostWorkspace(config, token) : null;
+const workspace = result?.ok ? result.data : null;
+const needsSignIn = !token || (result?.ok === false && result.status === 401);
+const signIn = PROFILE_AUTH_PATH + '?' + new URLSearchParams({ start: '1', returnTo: HOST_PATH });
+let error = false;
+if (Astro.request.method === 'POST' && config && token && workspace && !workspace.host_status) {
+  const form = await readConnectionForm(Astro.request, Astro.url.origin);
+  if (form instanceof Response) return form;
+  const parsed = hostForm.safeParse({
+    organisation: form.get('organisation'), about: form.get('about'), social: form.get('social'),
+    reference: form.get('reference'), agreement: form.has('agreement') ? workspace.agreement : '',
+  });
+  if (parsed.success) {
+    const applied = await applyToHost(config, token, parsed.data);
+    if (applied.ok) return Astro.redirect(HOST_PATH, 303);
+    Astro.response.status = applied.status;
+  } else Astro.response.status = 422;
+  error = true;
+} else if (!workspace) Astro.response.status = needsSignIn ? 401 : result?.ok === false ? result.status : 503;
+---
+
+<BaseLayout title={t('host.title')} noindex>
+  <section class="mx-auto max-w-2xl">
+    <h1 class="text-3xl font-bold tracking-tight">{t('host.title')}</h1>
+    {needsSignIn ? <a class="workspace-button mt-5" href={signIn}>{t('profile.signIn')}</a>
+      : !workspace ? <div class="mt-4"><p>{t(Astro.response.status === 403 ? 'host.memberRequired' : 'host.unavailable')}</p><a class="workspace-link" href={ONBOARDING_PATH}>{t('onboard.title')}</a></div>
+      : (
+        <>
+          {(workspace.admin || workspace.staff) && <nav class="mt-4 flex flex-wrap gap-x-4" aria-label={t('host.staffTools')}>
+            {workspace.admin && <a class="workspace-link" href={HOST_REVIEW_PATH}>{t('host.reviewTitle')}</a>}
+            {workspace.staff && <a class="workspace-link" href={FEEDBACK_INBOX_PATH}>{t('feedbackInbox.title')}</a>}
+          </nav>}
+          {workspace.host_status ? (
+            <p class="mt-3 text-[var(--ac-ink-muted)]">{t(`host.status.${workspace.host_status}`)}</p>
+          ) : (
+            <>
+              <p class="mt-3 text-[var(--ac-ink-muted)]">{t('host.applyIntro')}</p>
+              {error && <p role="alert" class="mt-4 text-sm font-semibold text-[var(--ac-danger)]">{t('host.applyError')}</p>}
+              <form method="post" class="workspace-form mt-6">
+                <label>{t('host.organisation')}<input name="organisation" maxlength="120" /></label>
+                <label>{t('host.about')}<textarea name="about" rows="4" required minlength="30" maxlength="2000"></textarea></label>
+                <label>{t('host.social')}<input type="url" name="social" maxlength="250" /></label>
+                <label>{t('host.reference')}<textarea name="reference" rows="2" maxlength="500"></textarea></label>
+                <label><input type="checkbox" name="agreement" required /> {t('host.agreement')}</label>
+                <a class="workspace-link" href="/host-guidelines" target="_blank" rel="noopener">{t('footer.hostLink')}</a>
+                <button class="workspace-button">{t('host.apply')}</button>
+              </form>
+            </>
+          )}
+          {workspace.host_status === 'approved' && <a class="workspace-button mt-5" href={CREATE_MEETUP_PATH}>{t('host.create')}</a>}
+          {!!workspace.meetups.length && <section class="mt-7">
+            <h2 class="text-lg font-semibold">{t('host.yourMeetups')}</h2>
+            <ul class="mt-2 divide-y divide-[var(--ac-border)] border-y border-[var(--ac-border)]">
+              {workspace.meetups.map((meetup) => <li class="py-3">
+                {meetup.status === 'published' ? <a class="font-semibold underline" href={`/${meetup.city_slug}/meetups/${meetup.slug}`}>{meetup.title}</a> : <p class="font-semibold">{meetup.title}</p>}
+                <p class="text-sm text-[var(--ac-ink-muted)]">{formatMeetupWhen(meetup.starts_at, null)} · {t(`host.meetupStatus.${meetup.status}`)}</p>
+              </li>)}
+            </ul>
+          </section>}
+        </>
+      )}
+  </section>
+</BaseLayout>

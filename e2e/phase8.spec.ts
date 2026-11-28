@@ -181,3 +181,92 @@ test('moderators can review and approve feedback with a private decision note', 
   await expect(page.getByText('Opening times checked against the posted hours.')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Approve feedback' })).toHaveCount(0);
 });
+
+test('a member completes onboarding, applies to host, and gets a first meetup reviewed', async ({ page, context, browser }) => {
+  await context.addCookies([{ name: 'ac-member-session', value: 'fixture.member.session', url: appOrigin }]);
+  await page.route('https://challenges.cloudflare.com/turnstile/v0/api.js', (route) => route.fulfill({
+    contentType: 'text/javascript',
+    body: `const field = document.createElement('input'); field.type = 'hidden';
+      field.name = 'cf-turnstile-response'; field.value = 'fixture-verified';
+      document.querySelector('.cf-turnstile').append(field);`,
+  }));
+  await page.goto('/me/profile');
+  await expect(page.getByText('Google test person')).toBeVisible();
+  await expect(page.getByText('google-member@example.invalid')).toBeVisible();
+  await expect.poll(() => page.locator('img[src="/me/profile/google-avatar"]').evaluate((image: HTMLImageElement) => image.naturalWidth)).toBe(48);
+  await page.getByRole('link', { name: 'Complete member onboarding' }).click();
+  await page.locator('input[name="cf-turnstile-response"]').waitFor({ state: 'attached' });
+  await page.getByLabel('Display name').fill('Test member');
+  await page.getByLabel('Date of birth').fill('1995-01-01');
+  await page.getByLabel('I accept the Terms and acknowledge the Privacy Notice.').check();
+  await page.getByLabel('I agree to follow the Community Guidelines.').check();
+  await page.getByRole('button', { name: 'Create member profile' }).click();
+  await expect(page).toHaveURL(appOrigin + '/me/profile');
+
+  await page.getByRole('link', { name: 'Host dashboard' }).click();
+  await page.getByLabel('About you and what you plan to host').fill('I organise casual public walks with a small local group.');
+  await page.getByLabel('I accept the Host Guidelines and Agreement.').check();
+  await page.getByRole('button', { name: 'Submit host application' }).click();
+  await expect(page.getByText('Your application is awaiting administrator review.')).toBeVisible();
+
+  const admin = await browser.newContext();
+  try {
+    await admin.addCookies([{ name: 'ac-member-session', value: 'fixture.admin.session', url: appOrigin }]);
+    const review = await admin.newPage();
+    await review.goto(appOrigin + '/me/admin/review');
+    await review.getByLabel('How you vetted the host').selectOption('video_call');
+    await review.getByLabel('Review note').fill('Called the applicant and checked the local reference.');
+    await review.getByRole('button', { name: 'Approve', exact: true }).click();
+    await expect(review.getByText('Review saved.')).toBeVisible();
+
+    await page.reload();
+    await page.getByRole('link', { name: 'Create meetup' }).click();
+    const day = new Date(Date.now() + 172_800_000).toISOString().slice(0, 10);
+    await page.getByLabel('Meetup title').fill('Sunday group walk');
+    await page.getByLabel('Details').fill('Meet our group for a short walk through the public garden.');
+    await page.getByLabel('Public venue name').fill('Company Garden');
+    await page.getByLabel('Locality').fill('Civil Lines');
+    await page.getByLabel('Starts (India Standard Time)').fill(day + 'T10:00');
+    await page.getByLabel('Ends (India Standard Time)').fill(day + 'T12:00');
+    await page.getByLabel('I confirm the venue is a public place.').check();
+    await page.getByRole('button', { name: 'Submit meetup' }).click();
+    await expect(page.getByText(/Awaiting admin review/)).toBeVisible();
+
+    await review.reload();
+    await expect(review.getByRole('heading', { name: 'Sunday group walk' })).toBeVisible();
+    await review.getByLabel('Review note').fill('The public venue, time, and event details have been checked.');
+    await review.getByRole('button', { name: 'Approve', exact: true }).click();
+    await expect(review.getByText('Review saved.')).toBeVisible();
+    await page.reload();
+    await expect(page.getByText(/Published/, { exact: false })).toBeVisible();
+  } finally {
+    await admin.close();
+  }
+});
+
+test('a moderator enrolls an authenticator and returns to the feedback inbox', async ({ page, context }) => {
+  await context.addCookies([{ name: 'ac-member-session', value: 'fixture.staff-unverified.session', url: appOrigin }]);
+  await page.goto('/me/moderation/feedback');
+  await page.getByRole('link', { name: 'Verify with your authenticator' }).click();
+  await page.getByRole('button', { name: 'Set up authenticator' }).click();
+  await expect(page.getByText(/using the setup key below/)).toBeVisible();
+  await page.getByLabel('Six-digit code').fill('123456');
+  await page.getByRole('button', { name: 'Verify code' }).click();
+  await expect(page).toHaveURL(appOrigin + '/me/moderation/feedback');
+  await expect(page.getByRole('heading', { name: 'Feedback inbox' })).toBeVisible();
+  await expect(page.getByText('Correct the park opening hours')).toBeVisible();
+});
+
+test('place cards use readable text in all palettes when the browser prefers dark mode', async ({ page }) => {
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto('/');
+  const heading = page.getByRole('heading', { name: 'Ambedkar Park' });
+  const theme = page.getByRole('combobox', { name: 'Theme' });
+  for (const [name, color] of [
+    ['sage', 'rgb(35, 55, 47)'], ['blue', 'rgb(35, 53, 79)'], ['pink', 'rgb(69, 45, 57)'],
+  ]) {
+    await theme.selectOption(name!);
+    await expect(heading).toHaveCSS('color', color!);
+  }
+});

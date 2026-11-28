@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 import { URL } from 'node:url';
 
 export const origin = 'http://127.0.0.1:4173';
@@ -8,6 +9,14 @@ const memberSession = 'fixture.member.session';
 const writeKey = 'fixture-feedback-writer';
 const challengeSecret = 'fixture-turnstile';
 const projectKey = 'fixture-posthog';
+const onboardingKey = 'a'.repeat(64);
+const memberId = '07a254e1-1bd8-495a-bf9a-5eeda584c506';
+const factorId = '6dfb3fb3-e285-4554-8b17-26bae3bbdca5';
+const avatarUrl = 'https://lh3.googleusercontent.com/test-avatar';
+let memberName;
+let hostState;
+let event;
+
 const { Response } = globalThis;
 const codes = new Map();
 const observations = { feedback: [], analytics: [] };
@@ -29,6 +38,7 @@ export function installProviders() {
     FEEDBACK_WRITE_KEY: writeKey,
     TURNSTILE_SECRET_KEY: challengeSecret,
     POSTHOG_PROJECT_KEY: projectKey,
+    ONBOARDING_WRITE_KEY: onboardingKey,
   });
   const requestLive = globalThis.fetch;
   globalThis.fetch = async (target, options) => {
@@ -46,7 +56,11 @@ export function installProviders() {
       observations.analytics.push(payload);
       return new Response(null, { status: 204 });
     }
-    if (new URL(target).origin === origin) return requestLive(target, options);
+    const url = new URL(target);
+    if (url.href === avatarUrl) return new Response(await readFile(new URL('../apps/web/public/apnacircle-icon-48.png', import.meta.url)), {
+      headers: { 'Content-Type': 'image/png' },
+    });
+    if (url.origin === origin) return requestLive(target, options);
     throw new Error('Unexpected external request in browser test');
   };
 }
@@ -81,6 +95,8 @@ export async function providerResponse(request) {
   const authorization = request.headers.get('authorization');
   const isMember = authorization === `Bearer ${memberSession}`;
   const isStaff = authorization === 'Bearer fixture.staff.session';
+  const isAdmin = authorization === 'Bearer fixture.admin.session';
+  const needsMfa = authorization === 'Bearer fixture.staff-unverified.session';
 
   switch (pathname) {
     case '/__test/observations':
@@ -88,6 +104,9 @@ export async function providerResponse(request) {
         observations.feedback.length = 0;
         observations.analytics.length = 0;
         codes.clear();
+        memberName = undefined;
+        hostState = undefined;
+        event = undefined;
         reviewFixture.status = 'new';
         reviewFixture.reviews = [];
       }
@@ -123,16 +142,75 @@ export async function providerResponse(request) {
       codes.delete(code);
       return Response.json({ access_token: memberSession, expires_in: 3600 });
     }
-    case '/auth/v1/user':
-      return isMember ? Response.json({ id: meetup.id }) : new Response(null, { status: 401 });
+    case '/auth/v1/user': {
+      if (isStaff || isAdmin || needsMfa) return Response.json({ app_metadata: { role: isAdmin ? 'admin' : 'moderator' }, factors: [] });
+      return isMember ? Response.json({
+        id: memberId, email: 'google-member@example.invalid', app_metadata: {},
+        identities: [{ provider: 'google', identity_data: { full_name: 'Google test person', avatar_url: avatarUrl } }],
+      }) : new Response(null, { status: 401 });
+    }
+    case '/auth/v1/factors':
+      return needsMfa ? Response.json({ id: factorId, totp: { secret: 'A'.repeat(16) } }) : new Response(null, { status: 403 });
+    case `/auth/v1/factors/${factorId}/challenge`:
+      return needsMfa ? Response.json({ id: meetup.id }) : new Response(null, { status: 403 });
+    case `/auth/v1/factors/${factorId}/verify`:
+      return needsMfa && (await request.json()).code === '123456'
+        ? Response.json({ access_token: 'fixture.staff.session', expires_in: 3600 })
+        : new Response(null, { status: 403 });
     case '/rest/v1/rpc/get_my_profile_editor':
-      return new Response(null, { status: isMember ? 403 : 401 });
+      if (!isMember || !memberName) return new Response(null, { status: isMember ? 403 : 401 });
+      return Response.json({
+        profile: { displayName: memberName, cityId: meetup.id, bio: null, intent: null, discoveryEnabled: false, cityVisible: false, interestIds: [] },
+        cities: [{ id: meetup.id, name: 'Saharanpur' }], interests: [],
+      });
+    case '/rest/v1/rpc/get_member_onboarding':
+      return isMember ? Response.json({ state: memberName ? 'complete' : 'new', invited: true, age_locked: false, interests: [] })
+        : new Response(null, { status: 401 });
+    case '/rest/v1/rpc/complete_member_onboarding': {
+      const data = await request.json();
+      if (!isMember || data.p_write_key !== onboardingKey) return new Response(null, { status: 403 });
+      memberName = data.p_name;
+      return Response.json('complete');
+    }
+    case '/rest/v1/rpc/get_host_workspace':
+      return isMember && memberName ? Response.json({
+        host_status: hostState ?? null, agreement: 'host-agreement-2026-11-26', established: false,
+        staff: false, admin: false, meetups: event ? [{ ...event, city_slug: meetup.city_slug, slug: 'fixture-host-meetup' }] : [],
+      }) : new Response(null, { status: 403 });
+    case '/rest/v1/rpc/apply_as_host':
+      if (!isMember || !memberName) return new Response(null, { status: 403 });
+      hostState = 'pending';
+      return new Response(null, { status: 204 });
+    case '/rest/v1/rpc/create_and_submit_meetup': {
+      if (!isMember || hostState !== 'approved') return new Response(null, { status: 403 });
+      const data = await request.json();
+      event = { meetup_id: meetup.id, title: data.p_title, starts_at: data.p_starts_at, ends_at: data.p_ends_at,
+        description: data.p_description, host_name: memberName, venue_name: data.p_venue_name, locality: data.p_locality,
+        spot_note: data.p_spot_note, capacity: data.p_capacity, women_only: data.p_women_only, status: 'pending_approval' };
+      return Response.json({ id: event.meetup_id, status: event.status });
+    }
+    case '/rest/v1/rpc/get_host_review_queue':
+      if (!isAdmin) return new Response(null, { status: 403 });
+      return Response.json({
+        host_applications: hostState === 'pending' ? [{ user_id: memberId, display_name: memberName,
+          organisation_name: null, about: 'I organise casual public walks', social_profile_url: null,
+          local_reference: null, applied_at: meetup.starts_at }] : [],
+        meetups: event?.status === 'pending_approval' ? [event] : [],
+      });
+    case '/rest/v1/rpc/decide_host_review': {
+      if (!isAdmin) return new Response(null, { status: 403 });
+      const data = await request.json();
+      if (data.p_type === 'host') hostState = data.p_decision === 'approve' ? 'approved' : 'rejected';
+      else if (event) event.status = data.p_decision === 'approve' ? 'published' : 'rejected';
+      return new Response(null, { status: 204 });
+    }
     case '/rest/v1/rpc/get_city_people_page':
       return isMember || authorization === `Bearer ${anonKey}`
         ? Response.json(publicTeaser) : new Response(null, { status: 401 });
     case '/rest/v1/rpc/get_public_meetup':
       return Response.json((await request.json()).p_slug === meetup.slug ? [meetup] : []);
     case '/rest/v1/rpc/list_site_feedback': {
+      if (needsMfa) return new Response(null, { status: 428 });
       if (!isStaff) return new Response(null, { status: 403 });
       const { p_status: status } = await request.json();
       const { id, subject, category, status: current, created_at } = reviewFixture;
