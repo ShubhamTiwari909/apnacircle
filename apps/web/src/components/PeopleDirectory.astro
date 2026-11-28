@@ -1,0 +1,228 @@
+---
+import { t } from '@apnacircle/i18n';
+import { ACTIVE_CITIES } from '@apnacircle/types';
+import { CONNECTION_REQUESTS_PATH } from '../lib/connection-requests.js';
+import {
+  directoryHref,
+  type DirectoryFilters,
+  type DirectoryPage,
+} from '../lib/people-directory.js';
+import { PROFILE_INTENTS } from '../lib/profile-editor.js';
+import { PROFILE_MEDIA_PATH } from '../lib/profile-photo-links.js';
+
+interface Props {
+  filters: DirectoryFilters;
+  page: Extract<DirectoryPage, { interests: unknown }>;
+  links: Map<string, string>;
+}
+
+const { filters, page, links } = Astro.props;
+const control =
+  'mt-1 w-full rounded-xl border border-[var(--ac-border-strong)] bg-[var(--ac-surface)] p-2.5 text-sm';
+---
+
+<div class="mx-auto max-w-5xl">
+  <header class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-2">
+    <h1 class="text-3xl font-bold tracking-tight">{t('directory.title')}</h1>
+    <a href={CONNECTION_REQUESTS_PATH} class="text-sm font-semibold underline underline-offset-4">{t('connections.title')}</a>
+  </header>
+  {Astro.url.searchParams.get('blocked') === '1' && (
+    <p role="status" class="mt-3 text-sm font-semibold">{t('connections.updated.block')}</p>
+  )}
+
+  <form
+    method="get"
+    action="/people"
+    class="mt-5 rounded-2xl border border-[var(--ac-border)] bg-[var(--ac-surface)] p-5"
+  >
+    <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div>
+        <label for="directory-name" class="text-sm font-semibold">{t('directory.name')}</label>
+        <input
+          class={control}
+          type="search"
+          id="directory-name"
+          name="q"
+          value={filters.name}
+          minlength="3"
+          maxlength="50"
+          aria-describedby="directory-name-help"
+        />
+        <p id="directory-name-help" class="mt-1 text-xs text-[var(--ac-ink-muted)]">
+          {t('directory.nameHelp')}
+        </p>
+      </div>
+      <div>
+        <label for="directory-city" class="text-sm font-semibold">{t('directory.city')}</label>
+        <select class={control} id="directory-city" name="city">
+          <option value="" selected={filters.city === null}>{t('directory.allCities')}</option>
+          {
+            ACTIVE_CITIES.map((city) => (
+              <option value={city.slug} selected={filters.city === city.slug}>
+                {city.name}
+              </option>
+            ))
+          }
+        </select>
+      </div>
+      <div>
+        <label for="directory-intent" class="text-sm font-semibold">{t('directory.intent')}</label>
+        <select class={control} id="directory-intent" name="intent">
+          <option value="" selected={filters.intent === null}>{t('directory.allIntents')}</option>
+          {
+            PROFILE_INTENTS.map((intent) => (
+              <option value={intent} selected={filters.intent === intent}>
+                {t(`profile.intent.${intent}`)}
+              </option>
+            ))
+          }
+        </select>
+      </div>
+      <div>
+        <label for="directory-sort" class="text-sm font-semibold">{t('directory.sort')}</label>
+        <select class={control} id="directory-sort" name="sort">
+          <option value="relevance" selected={filters.sort === 'relevance'}
+            >{t('directory.relevance')}</option
+          >
+          <option value="recent" selected={filters.sort === 'recent'}
+            >{t('directory.recent')}</option
+          >
+        </select>
+      </div>
+    </div>
+    {
+      page.interests.length > 0 && (
+        <details class="mt-4 text-sm" open={filters.interests.length > 0}>
+          <summary class="cursor-pointer font-semibold">{t('directory.interests')}</summary>
+          <fieldset class="mt-2">
+            <legend class="text-xs text-[var(--ac-ink-muted)]">
+              {t('directory.interestsHelp')}
+            </legend>
+            <div class="mt-2 grid gap-1 sm:grid-cols-2 lg:grid-cols-3">
+              {page.interests.map((interest) => (
+                <label class="flex min-h-9 items-center gap-2">
+                  <input
+                    type="checkbox"
+                    name="interest"
+                    value={interest.slug}
+                    checked={filters.interests.includes(interest.slug)}
+                    class="size-4 accent-[var(--ac-accent)]"
+                  />
+                  {interest.name}
+                </label>
+              ))}
+            </div>
+          </fieldset>
+        </details>
+      )
+    }
+    <div class="mt-4 flex flex-wrap items-center gap-4">
+      <button
+        type="submit"
+        class="min-h-11 rounded-xl bg-[var(--ac-accent)] px-5 text-sm font-semibold text-white hover:bg-[var(--ac-accent-hover)]"
+        >{t('directory.submit')}</button
+      >
+      <a href="/people" class="text-sm font-semibold underline underline-offset-4"
+        >{t('directory.clear')}</a
+      >
+    </div>
+  </form>
+
+  {
+    page.status !== 'ok' ? (
+      <p role="alert" class="mt-5 rounded-xl border border-[var(--ac-border)] p-4 text-sm">
+        {t(`directory.${page.status}`)}
+      </p>
+    ) : (
+      <section class="mt-7" aria-labelledby="directory-results">
+        <div class="flex flex-wrap items-baseline justify-between gap-2">
+          <h2 id="directory-results" class="text-xl font-bold">
+            {t('directory.results')}
+          </h2>
+          {page.cards.length > 0 && (
+            <p class="text-sm text-[var(--ac-ink-muted)]">
+              {page.totalFloor
+                ? t('directory.total', { count: page.totalFloor.toLocaleString('en-IN') })
+                : t('directory.totalSmall')}
+            </p>
+          )}
+        </div>
+        {page.cards.length === 0 ? (
+          <p class="mt-3 text-sm text-[var(--ac-ink-muted)]">{t('directory.empty')}</p>
+        ) : (
+          <ul class="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {page.cards.map((card) => {
+              const photo = card.photoId && links.get(card.photoId);
+              return (
+                <li class="flex flex-col rounded-xl border border-[var(--ac-border)] bg-[var(--ac-surface)]">
+                  <a
+                    href={`/u/${card.publicId}`}
+                    class="flex min-h-24 grow items-center gap-3 rounded-t-xl p-4 hover:bg-[var(--ac-surface-muted)]"
+                  >
+                    {photo ? (
+                      <img
+                        src={PROFILE_MEDIA_PATH + photo}
+                        alt=""
+                        width="56"
+                        height="56"
+                        class="size-14 shrink-0 rounded-lg object-cover"
+                      />
+                    ) : (
+                      <span
+                        aria-hidden="true"
+                        class="grid size-14 shrink-0 place-items-center rounded-lg bg-[var(--ac-accent-soft)] text-lg font-semibold text-[var(--ac-ink)]"
+                      >
+                        {Array.from(card.displayName.trim())[0]?.toLocaleUpperCase('en-IN')}
+                      </span>
+                    )}
+                    <div class="min-w-0">
+                      <p class="break-words font-semibold">{card.displayName}</p>
+                      {card.city && (
+                        <p class="mt-1 text-sm text-[var(--ac-ink-muted)]">{card.city}</p>
+                      )}
+                      {card.intent && (
+                        <p class="mt-1 text-sm text-[var(--ac-ink-muted)]">
+                          {t(`profile.intent.${card.intent}`)}
+                        </p>
+                      )}
+                    </div>
+                  </a>
+                  <form method="post" action={`/u/${card.publicId}`} class="flex justify-end border-t border-[var(--ac-border)] px-4">
+                    <button name="action" value="block" aria-label={t('connections.blockNamed', { name: card.displayName })}
+                      class="min-h-11 text-sm font-semibold underline underline-offset-4">{t('connections.block')}</button>
+                  </form>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+        {(page.page > 1 || page.nextCursor) && (
+          <nav
+            aria-label={t('directory.pagination')}
+            class="mt-6 flex flex-wrap items-center gap-4 text-sm"
+          >
+            {page.page > 1 && (
+              <a
+                href={directoryHref(filters, page.previousCursor)}
+                rel="prev"
+                class="font-semibold underline underline-offset-4"
+              >
+                {t('directory.previous')}
+              </a>
+            )}
+            <span>{t('directory.page', { page: page.page })}</span>
+            {page.nextCursor && (
+              <a
+                href={directoryHref(filters, page.nextCursor)}
+                rel="next"
+                class="font-semibold underline underline-offset-4"
+              >
+                {t('directory.next')}
+              </a>
+            )}
+          </nav>
+        )}
+      </section>
+    )
+  }
+</div>

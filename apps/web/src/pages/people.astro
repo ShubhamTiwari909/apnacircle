@@ -4,5 +4,8 @@ import { ACTIVE_CITIES } from '@apnacircle/types';
 export const prerender = false;
 
 const city = ACTIVE_CITIES[0];
-return Astro.rewrite(city ? `/${city.slug}/people` : '/404');
+if (!city) return Astro.rewrite('/404');
+const target = new URL(Astro.url);
+target.pathname = `/${city.slug}/people`;
+return Astro.rewrite(target);
 ---

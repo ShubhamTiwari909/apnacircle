@@ -11,9 +11,10 @@
   - 013: Phase 6 per-city directory unlock and backup moderator roster.
   - 014: Phase 6 gated member profile view and profile view budgets.
   - 015: Phase 6 signed-out People teaser.
+  - 016: Phase 7 members-only People directory.
 - `functions/` Edge Functions. `outbox-worker` is the only sender of email and Web Push.
   `_shared/` holds code shared between functions (`staff.ts`, `outbox.ts`, with unit tests run by `pnpm test`).
-- `tests/p4/` and `tests/p6/` SQL assertion suites and parallel-session concurrency tests, run by `pnpm test:db`.
+- `tests/p4/`, `tests/p6/`, and `tests/p7/` SQL assertion suites and parallel-session concurrency tests, run by `pnpm test:db`.
   `tests/rls_tests.sql` and `tests/phase3_tests.sql` are pgTAP suites that need the `pgtap` extension;
   the runner executes them only when it is available, and says so when it skips them.
 
@@ -179,3 +180,84 @@ The teaser summarizes up to three upcoming published meetups using their public 
 time, and slug. The response omits profile rows, host and attendee fields, and all photo data.
 Signed-in, age-confirmed members receive only directory readiness. Both web routes are noindex
 and send private, no-store responses.
+
+## Members-only People directory
+
+Apply migration 016 and redeploy the web Worker and `outbox-worker` Edge Function. Signed-in, age-confirmed members can use
+`/people` to search enabled discovery profiles across unlocked cities. A city-filtered page
+includes only members who show their city. Both directions of a block are checked before
+counting or returning results. The API returns opaque profile IDs, display names, visible
+cities, listed intents, and eligible thumbnail IDs. Existing signed photo checks apply at
+each image request.
+
+Search matches a case-insensitive display-name prefix of at least three characters.
+All selected interests must match. Results offer relevance or most-recently-joined sorting.
+The API returns up to 20 cards and rounds totals down in groups of ten. Its opaque,
+viewer-bound cursors expire after 30 minutes and stop at page ten.
+
+The database limits directory searches to 100 per viewer per IST day. Reaching that budget
+records an audit event and queues one daily alert to `MODERATION_INBOX_EMAIL`. The Worker applies an additional local limit of 120 directory reads
+per minute per Cloudflare client IP. The separate profile-view budget still applies to
+individual profile visits.
+
+## Connection requests
+
+Apply migration 017 before redeploying the web Worker. Members send from a visible
+profile and manage incoming and outgoing requests at `/me/profile/connections`.
+Both cities must be unlocked to start or accept a request. The database serializes
+request creation, enforces the configured trust-tier limits and 25-pending cap, and
+returns HTTP 429 with the next retry time. Daily limits reset at midnight IST.
+
+Outgoing request reads show pending until the original expiry for a silent decline.
+Cooldowns start at the decline, expiry, or cancellation event. Past blocks prevent
+new requests. Five declines or reports from two distinct members in seven days
+restrict the sender and open a moderation case. The case uses the existing moderator
+email queue. Staff can review the case and decide whether to lift the restriction.
+
+### Request settings
+
+Apply migration 018 before redeploying the web Worker. Members can open Request settings
+from their Connection requests page. The default requires an approved photo and L1 or higher.
+Shared-meetup mode requires host-confirmed attendance for both members at the same meetup.
+Pausing prevents new requests and keeps the selected rule and existing incoming requests.
+
+### Connection actions
+
+Apply migration 019 before redeploying the web Worker and the `block` Edge Function.
+The Connections tab lists active connections and lets either party remove one.
+Blocking from People, a profile, or a request or connection record hides both members
+from each other, closes pending requests and active connections, and revokes shares.
+The block itself sends no notification to the other member.
+
+### Contact sharing
+
+Apply migration 020 before redeploying the web Worker. The Contact details page is available
+from an active connection. Each member can choose to share one Instagram username and one
+WhatsApp username per connection. WhatsApp accepts a username only. Each grant requires the
+current notice and links the timestamped share to a versioned English consent record.
+
+Revocation clears the stored handle from the active database and retains scoped consent metadata.
+Connection removal and blocking also revoke shares, and reconnecting starts with a new contact
+page. Handles are excluded from connection lists, notifications and audit records.
+
+### Connection request expiry
+
+Migration 021 replaces the old nightly HTTP job with a direct PostgreSQL `expire_requests`
+job that runs every five minutes. A pending request reaches its deadline 30 days after it
+was sent. The member view uses that deadline immediately, even before the next scheduled run.
+Sent requests and silent declines both show **No response** after the deadline, while internal
+decline records and cooldowns are preserved. The job does not send notifications or use the
+Edge Function or its cron secret.
+
+### Connection request abuse dashboard
+
+Apply migration 022 and deploy the web Worker. Staff open `/me/moderation/connection-abuse`
+with their normal ApnaCircle account. The dashboard requires an active `moderator` or `admin`
+role in Supabase Auth and an AAL2 session. Staff with a verified Supabase TOTP factor can
+verify their authenticator on this page. Staff enrolment uses Supabase native MFA.
+
+The queue shows member reports about connection requests and automatic restrictions. It sorts
+by priority and SLA deadline, and supports filters for case type and status. Moderators can
+start reviews, confirm restrictions, and uphold or dismiss member reports with a note.
+Queue reads, case reads, and decisions are audited. Review notes stay in the dashboard, and
+outcome notifications use the existing generic template.

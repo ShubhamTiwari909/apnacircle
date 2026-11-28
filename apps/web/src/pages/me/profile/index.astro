@@ -2,6 +2,7 @@
 import { env } from 'cloudflare:workers';
 import { t } from '@apnacircle/i18n';
 import BaseLayout from '../../../layouts/BaseLayout.astro';
+import { CONNECTION_REQUESTS_PATH } from '../../../lib/connection-requests.js';
 import { getPublicApiConfig } from '../../../lib/meetups.js';
 import { isAllowedOrigin } from '../../../lib/origin.js';
 import {
@@ -324,9 +325,10 @@ const check = 'mt-0.5 size-5 shrink-0 accent-[var(--ac-accent)]';
               {t('profile.save')}
             </button>
           </form>
-          <a href={`${PROFILE_PATH}/photos`} class="mt-5 inline-flex min-h-11 items-center text-sm font-semibold underline underline-offset-4">
-            {t('photos.manage')}
-          </a>
+          <div class="mt-5 flex flex-wrap gap-4 text-sm font-semibold">
+            <a href={`${PROFILE_PATH}/photos`} class="inline-flex min-h-11 items-center underline underline-offset-4">{t('photos.manage')}</a>
+            <a href={CONNECTION_REQUESTS_PATH} class="inline-flex min-h-11 items-center underline underline-offset-4">{t('connections.title')}</a>
+          </div>
           <form method="post" action={PROFILE_PATH} class="mt-4">
             <button
               name="action"

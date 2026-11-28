@@ -1,0 +1,129 @@
+---
+import { env } from 'cloudflare:workers';
+import { t } from '@apnacircle/i18n';
+import BaseLayout from '../../../../../layouts/BaseLayout.astro';
+import {
+  CONNECTION_REQUESTS_PATH, CONTACT_KINDS, CONTACT_NOTICE_VERSION, getConnectionContacts,
+  parseContactAction, readConnectionForm, updateConnectionContact,
+} from '../../../../../lib/connection-requests.js';
+import { getPublicApiConfig } from '../../../../../lib/meetups.js';
+import { CONNECTION_CONTACT_PATH, CONTACT_ID_PATTERN, PROFILE_AUTH_PATH, PROFILE_SESSION } from '../../../../../lib/profile-editor.js';
+
+export const prerender = false;
+
+const contactId = Astro.params.id ?? '';
+if (!CONTACT_ID_PATTERN.test(contactId)) return Astro.rewrite('/404');
+const pagePath = `${CONNECTION_CONTACT_PATH}/${contactId}`;
+const token = Astro.cookies.get(PROFILE_SESSION)?.value;
+const config = getPublicApiConfig({
+  PUBLIC_SUPABASE_URL: env.PUBLIC_SUPABASE_URL ?? import.meta.env.PUBLIC_SUPABASE_URL,
+  PUBLIC_SUPABASE_ANON_KEY: env.PUBLIC_SUPABASE_ANON_KEY ?? import.meta.env.PUBLIC_SUPABASE_ANON_KEY,
+});
+
+let actionError: 'invalid' | 'failed' | undefined;
+if (Astro.request.method === 'POST') {
+  const form = await readConnectionForm(Astro.request, Astro.url.origin);
+  if (form instanceof Response) return form;
+  if (!token) return new Response(null, { status: 401 });
+  if (!config) return new Response(null, { status: 503 });
+  const action = parseContactAction(form);
+  if (!action.success) {
+    Astro.response.status = 422;
+    actionError = 'invalid';
+  } else {
+    const result = await updateConnectionContact(config, token, contactId, action.data);
+    if (result.ok) return Astro.redirect(`${pagePath}?updated=${action.data.action}`, 303);
+    Astro.response.status = result.status === 409 ? 404 : result.status;
+    actionError = result.status === 422 ? 'invalid' : 'failed';
+  }
+} else if (!['GET', 'HEAD'].includes(Astro.request.method)) {
+  return new Response(null, { status: 405, headers: { Allow: 'GET, HEAD, POST' } });
+}
+
+const result = config && token ? await getConnectionContacts(config, token, contactId) : null;
+const signInNeeded = !token || (result?.ok === false && result.reason === 'session');
+const unavailable = result?.ok === false && (result.status === 409 || result.status === 403);
+if (!result?.ok) Astro.response.status = signInNeeded ? 401 : unavailable ? 404 : result?.status ?? 503;
+const contacts = result?.ok ? result.data : null;
+const mine = contacts?.shares.filter((share) => share.mine) ?? [];
+const received = contacts?.shares.filter((share) => !share.mine) ?? [];
+const signInHref = `${PROFILE_AUTH_PATH}?${new URLSearchParams({ start: '1', returnTo: pagePath })}`;
+const updated = Astro.request.method === 'GET' ? Astro.url.searchParams.get('updated') : null;
+const panel = 'rounded-xl border border-[var(--ac-border)] bg-[var(--ac-surface)] p-4 sm:p-5';
+const control = 'mt-1 block w-full rounded-lg border border-[var(--ac-border-strong)] bg-[var(--ac-surface)] p-2.5';
+---
+
+<BaseLayout title={t('connections.contact.title')} noindex={true}>
+  <section class="mx-auto max-w-2xl">
+    <a href={`${CONNECTION_REQUESTS_PATH}?tab=connected`} class="inline-flex min-h-11 items-center text-sm font-semibold underline underline-offset-4">
+      {t('connections.active')}
+    </a>
+    <h1 class="mt-2 text-3xl font-bold tracking-tight">{t('connections.contact.title')}</h1>
+    {contacts ? (
+      <>
+        <p class="mt-2 break-words text-[var(--ac-ink-muted)]">{contacts.displayName ?? t('connections.member')}</p>
+        {(updated === 'share' || updated === 'revoke') && <p role="status" class="mt-4 text-sm font-semibold">{t(`connections.contact.updated.${updated}`)}</p>}
+        {actionError && <p role="alert" class="mt-4 text-sm">{t(`connections.contact.error.${actionError}`)}</p>}
+
+        <section class:list={[panel, 'mt-5']} aria-labelledby="my-contact-title">
+          <h2 id="my-contact-title" class="text-lg font-semibold">{t('connections.contact.mine')}</h2>
+          {mine.length ? (
+            <ul class="mt-2 divide-y divide-[var(--ac-border)]">
+              {mine.map(({ kind, value }) => (
+                <li class="flex flex-wrap items-center justify-between gap-x-3 py-1">
+                  <p class="min-w-0 break-words text-sm"><span class="font-semibold">{t(`connections.contact.kind.${kind}`)}</span> @{value}</p>
+                  <form method="post" action={pagePath}>
+                    <input type="hidden" name="kind" value={kind} />
+                    <button name="action" value="revoke" class="min-h-11 text-sm font-semibold underline underline-offset-4">
+                      {t('connections.contact.revoke', { platform: t(`connections.contact.kind.${kind}`) })}
+                    </button>
+                  </form>
+                </li>
+              ))}
+            </ul>
+          ) : <p class="mt-2 text-sm text-[var(--ac-ink-muted)]">{t('connections.contact.emptyMine')}</p>}
+        </section>
+
+        {contacts.canShare ? (
+          <>
+            <section class:list={[panel, 'mt-4']} aria-labelledby="received-contact-title">
+              <h2 id="received-contact-title" class="text-lg font-semibold">{t('connections.contact.received')}</h2>
+              {received.length ? (
+                <ul class="mt-2 space-y-2 text-sm">
+                  {received.map(({ kind, value }) => (
+                    <li class="break-words"><span class="font-semibold">{t(`connections.contact.kind.${kind}`)}</span> @{value}</li>
+                  ))}
+                </ul>
+              ) : <p class="mt-2 text-sm text-[var(--ac-ink-muted)]">{t('connections.contact.emptyReceived')}</p>}
+            </section>
+
+            <form method="post" action={pagePath} class:list={[panel, 'mt-4 space-y-4']} aria-labelledby="share-contact-title">
+              <h2 id="share-contact-title" class="text-lg font-semibold">{t('connections.contact.shareTitle')}</h2>
+              <input type="hidden" name="noticeVersion" value={CONTACT_NOTICE_VERSION} />
+              <div>
+                <label for="contact-kind" class="text-sm font-semibold">{t('connections.contact.platform')}</label>
+                <select id="contact-kind" name="kind" class={control}>
+                  {CONTACT_KINDS.map((kind) => <option value={kind}>{t(`connections.contact.kind.${kind}`)}</option>)}
+                </select>
+              </div>
+              <div>
+                <label for="contact-value" class="text-sm font-semibold">{t('connections.contact.username')}</label>
+                <input id="contact-value" name="value" required maxlength="31" pattern="@?[A-Za-z0-9._]{1,30}" autocomplete="off" autocapitalize="none" spellcheck="false" aria-describedby="contact-format" class={control} />
+                <p id="contact-format" class="mt-1 text-sm text-[var(--ac-ink-muted)]">{t('connections.contact.format')}</p>
+              </div>
+              <label class="flex items-start gap-3 text-sm">
+                <input type="checkbox" name="consent" required class="mt-0.5 size-4 shrink-0 accent-[var(--ac-accent)]" />
+                {t('connections.contact.consent')}
+              </label>
+              <button name="action" value="share" class="min-h-11 rounded-xl bg-[var(--ac-accent)] px-4 text-sm font-semibold text-white hover:bg-[var(--ac-accent-hover)]">
+                {t('connections.contact.share')}
+              </button>
+            </form>
+          </>
+        ) : <p class="mt-4 text-sm text-[var(--ac-ink-muted)]">{t('connections.contact.paused')}</p>}
+      </>
+    ) : signInNeeded ? (
+      <a href={signInHref} class="mt-4 inline-flex min-h-11 items-center font-semibold underline underline-offset-4">{t('profile.signIn')}</a>
+    ) : <p role="alert" class="mt-4 text-sm">{t(unavailable ? 'connections.contact.unavailable' : 'connections.contact.loadFailed')}</p>}
+  </section>
+</BaseLayout>

@@ -3,14 +3,25 @@ import { env } from 'cloudflare:workers';
 import { t } from '@apnacircle/i18n';
 import { ACTIVE_CITIES } from '@apnacircle/types';
 import BaseLayout from '../../layouts/BaseLayout.astro';
+import PeopleDirectory from '../../components/PeopleDirectory.astro';
 import { formatMeetupWhen, getPublicApiConfig } from '../../lib/meetups.js';
 import { getPeoplePage } from '../../lib/people.js';
+import {
+  directoryReadIpLimiter,
+  readDirectoryFilters,
+  searchPeopleDirectory,
+  type DirectoryPage,
+} from '../../lib/people-directory.js';
+import { fetchSignedProfilePhotoUrls } from '../../lib/profile-photo-links.js';
 import { PROFILE_AUTH_PATH, PROFILE_SESSION } from '../../lib/profile-editor.js';
 
 export const prerender = false;
 
-const city = ACTIVE_CITIES.find((item) => item.slug === Astro.params.city);
-if (!city) return Astro.rewrite('/404');
+const routeCity = ACTIVE_CITIES.find((item) => item.slug === Astro.params.city);
+if (!routeCity) return Astro.rewrite('/404');
+const globalDirectory = Astro.originPathname.replace(/\/$/, '') === '/people';
+const filters = readDirectoryFilters(Astro.url.searchParams, globalDirectory ? null : routeCity.slug);
+const city = ACTIVE_CITIES.find((item) => item.slug === filters.city) ?? routeCity;
 const config = getPublicApiConfig({
   PUBLIC_SUPABASE_URL: env.PUBLIC_SUPABASE_URL ?? import.meta.env.PUBLIC_SUPABASE_URL,
   PUBLIC_SUPABASE_ANON_KEY:
@@ -19,12 +30,40 @@ const config = getPublicApiConfig({
 const token = Astro.cookies.get(PROFILE_SESSION)?.value;
 const result = config ? await getPeoplePage(config, city.slug, token) : ({ ok: false } as const);
 const data = result.ok ? result.data : null;
-if (!data) Astro.response.status = 503;
+let directory: DirectoryPage | { status: 'unavailable' } | null = null;
+if (config && token && data?.teaser === null) {
+  const ip = Astro.request.headers.get('CF-Connecting-IP');
+  const allowance = ip ? directoryReadIpLimiter.check(ip) : null;
+  if (allowance && !allowance.allowed) {
+    Astro.response.headers.set('Retry-After', String(allowance.retryAfterSeconds));
+    directory = { status: 'limited', interests: [] };
+  } else {
+    directory = await searchPeopleDirectory(config, token, filters);
+  }
+}
 
-const status = data ? (data.directoryOpen ? 'ready' : 'locked') : 'unavailable';
+if (!data || directory?.status === 'unavailable') Astro.response.status = 503;
+if (directory?.status === 'limited') Astro.response.status = 429;
+
+const directoryPage = directory && 'interests' in directory ? directory : null;
+const links =
+  config && token && directoryPage?.status === 'ok'
+    ? await fetchSignedProfilePhotoUrls(
+        config,
+        token,
+        directoryPage.cards.flatMap(({ photoId }) => photoId ?? []),
+        'thumb',
+      )
+    : new Map<string, string>();
+const status =
+  !data || directory?.status === 'unavailable'
+    ? 'unavailable'
+    : directory?.status === 'locked' || !data.directoryOpen
+      ? 'locked'
+      : 'ready';
 const teaser = data?.teaser;
-const showSignIn = data ? teaser !== null : !token;
-const signInHref = `${PROFILE_AUTH_PATH}?${new URLSearchParams({ start: '1', returnTo: `/${city.slug}/people` })}`;
+const showSignIn = directory?.status === 'session' || (data ? teaser !== null : !token);
+const signInHref = `${PROFILE_AUTH_PATH}?${new URLSearchParams({ start: '1', returnTo: globalDirectory ? '/people' : `/${city.slug}/people` })}`;
 const signInOutcome = Astro.url.searchParams.get('signin');
 const signInError =
   signInOutcome === 'membership'
@@ -35,114 +74,120 @@ const signInError =
 ---
 
 <BaseLayout
-  title={t('people.cityTitle', { city: city.name })}
+  title={directoryPage ? t('directory.title') : t('people.cityTitle', { city: city.name })}
   activeCitySlug={city.slug}
   noindex={true}
 >
-  <section
-    class="mx-auto max-w-2xl rounded-3xl border border-[var(--ac-border)] bg-[var(--ac-surface)] p-6 shadow-[var(--ac-shadow-card)] sm:p-10"
-  >
-    <h1 class="text-2xl font-bold text-[var(--ac-ink)] sm:text-3xl">
-      {t('people.cityTitle', { city: city.name })}
-    </h1>
-    <p class="mt-4 font-semibold text-[var(--ac-ink)]">
-      {t(`people.status.${status}`)}
-    </p>
-    <p class="mt-2 text-sm leading-relaxed text-[var(--ac-ink-muted)] sm:text-base">
-      {t(`people.body.${status}`)}
-    </p>
+  {
+    directoryPage ? (
+      <PeopleDirectory filters={filters} page={directoryPage} links={links} />
+    ) : (
+      <section class="mx-auto max-w-2xl rounded-3xl border border-[var(--ac-border)] bg-[var(--ac-surface)] p-6 shadow-[var(--ac-shadow-card)] sm:p-10">
+        <h1 class="text-2xl font-bold text-[var(--ac-ink)] sm:text-3xl">
+          {t('people.cityTitle', { city: city.name })}
+        </h1>
+        <p class="mt-4 font-semibold text-[var(--ac-ink)]">{t(`people.status.${status}`)}</p>
+        <p class="mt-2 text-sm leading-relaxed text-[var(--ac-ink-muted)] sm:text-base">
+          {t(`people.body.${status}`)}
+        </p>
 
-    {
-      showSignIn && (
-        <div class="mt-5">
-          {signInError && (
-            <p role="alert" class="mb-2 text-sm">
-              {signInError}
-            </p>
-          )}
+        {showSignIn && (
+          <div class="mt-5">
+            {signInError && (
+              <p role="alert" class="mb-2 text-sm">
+                {signInError}
+              </p>
+            )}
+            <a
+              href={signInHref}
+              class="inline-flex min-h-10 items-center rounded-xl bg-[var(--ac-accent)] px-4 py-2 text-sm font-semibold text-white hover:bg-[var(--ac-accent-hover)]"
+            >
+              {t('profile.signIn')}
+            </a>
+          </div>
+        )}
+
+        {teaser && (
+          <div class="mt-6 space-y-5 border-t border-[var(--ac-border)] pt-5">
+            <div>
+              <h2 class="font-semibold">{t('people.teaserMembersHeading')}</h2>
+              <p class="mt-1 text-sm text-[var(--ac-ink-muted)]">
+                {teaser.memberCountFloor === 0
+                  ? t('people.teaserCountSmall')
+                  : t('people.teaserCount', {
+                      count: teaser.memberCountFloor.toLocaleString('en-IN'),
+                    })}
+              </p>
+            </div>
+            <div>
+              <h2 class="font-semibold">{t('people.teaserInterestsHeading')}</h2>
+              {teaser.popularInterests.length ? (
+                <ul class="mt-2 flex flex-wrap gap-2">
+                  {teaser.popularInterests.map((interest) => (
+                    <li class="rounded-full border border-[var(--ac-border)] px-3 py-1 text-sm">
+                      {interest}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p class="mt-1 text-sm text-[var(--ac-ink-muted)]">
+                  {t('people.teaserInterestsEmpty')}
+                </p>
+              )}
+            </div>
+            <div>
+              <h2 class="font-semibold">{t('people.teaserMeetupsHeading')}</h2>
+              {teaser.upcomingMeetups.length ? (
+                <ul class="mt-1 divide-y divide-[var(--ac-border)]">
+                  {teaser.upcomingMeetups.map((meetup) => (
+                    <li class="py-3">
+                      <a
+                        href={`/${city.slug}/meetups/${meetup.slug}`}
+                        class="break-words text-sm font-semibold underline underline-offset-4"
+                      >
+                        {meetup.title}
+                      </a>
+                      <time
+                        class="mt-1 block text-sm text-[var(--ac-ink-muted)]"
+                        datetime={meetup.startsAt}
+                      >
+                        {formatMeetupWhen(meetup.startsAt, null)}
+                      </time>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p class="mt-1 text-sm text-[var(--ac-ink-muted)]">
+                  {t('people.teaserMeetupsEmpty')}
+                </p>
+              )}
+            </div>
+          </div>
+        )}
+
+        <div class="mt-6 flex flex-wrap gap-3">
           <a
-            href={signInHref}
-            class="inline-flex min-h-10 items-center rounded-xl bg-[var(--ac-accent)] px-4 py-2 text-sm font-semibold text-white hover:bg-[var(--ac-accent-hover)]"
+            href={`/${city.slug}/meetups`}
+            class="inline-flex min-h-10 items-center rounded-xl border border-[var(--ac-border-strong)] px-4 py-2 text-sm font-semibold text-[var(--ac-ink)] hover:bg-[var(--ac-surface-muted)]"
           >
-            {t('profile.signIn')}
+            {t('people.teaserCtaMeetups')}
+          </a>
+          <a
+            href="/safety"
+            class="inline-flex min-h-10 items-center rounded-xl border border-[var(--ac-border-strong)] px-4 py-2 text-sm font-semibold text-[var(--ac-ink)] hover:bg-[var(--ac-surface-muted)]"
+          >
+            {t('people.teaserCtaSafety')}
           </a>
         </div>
-      )
-    }
-
-    {
-      teaser && (
-        <div class="mt-6 space-y-5 border-t border-[var(--ac-border)] pt-5">
-          <div>
-            <h2 class="font-semibold">{t('people.teaserMembersHeading')}</h2>
-            <p class="mt-1 text-sm text-[var(--ac-ink-muted)]">
-              {teaser.memberCountFloor === 0
-                ? t('people.teaserCountSmall')
-                : t('people.teaserCount', {
-                    count: teaser.memberCountFloor.toLocaleString('en-IN'),
-                  })}
-            </p>
-          </div>
-          <div>
-            <h2 class="font-semibold">{t('people.teaserInterestsHeading')}</h2>
-            {teaser.popularInterests.length ? (
-              <ul class="mt-2 flex flex-wrap gap-2">
-                {teaser.popularInterests.map((interest) => (
-                  <li class="rounded-full border border-[var(--ac-border)] px-3 py-1 text-sm">
-                    {interest}
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p class="mt-1 text-sm text-[var(--ac-ink-muted)]">
-                {t('people.teaserInterestsEmpty')}
-              </p>
-            )}
-          </div>
-          <div>
-            <h2 class="font-semibold">{t('people.teaserMeetupsHeading')}</h2>
-            {teaser.upcomingMeetups.length ? (
-              <ul class="mt-1 divide-y divide-[var(--ac-border)]">
-                {teaser.upcomingMeetups.map((meetup) => (
-                  <li class="py-3">
-                    <a
-                      href={`/${city.slug}/meetups/${meetup.slug}`}
-                      class="break-words text-sm font-semibold underline underline-offset-4"
-                    >
-                      {meetup.title}
-                    </a>
-                    <time
-                      class="mt-1 block text-sm text-[var(--ac-ink-muted)]"
-                      datetime={meetup.startsAt}
-                    >
-                      {formatMeetupWhen(meetup.startsAt, null)}
-                    </time>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p class="mt-1 text-sm text-[var(--ac-ink-muted)]">
-                {t('people.teaserMeetupsEmpty')}
-              </p>
-            )}
-          </div>
-        </div>
-      )
-    }
-
-    <div class="mt-6 flex flex-wrap gap-3">
-      <a
-        href={`/${city.slug}/meetups`}
-        class="inline-flex min-h-10 items-center rounded-xl border border-[var(--ac-border-strong)] px-4 py-2 text-sm font-semibold text-[var(--ac-ink)] hover:bg-[var(--ac-surface-muted)]"
-      >
-        {t('people.teaserCtaMeetups')}
-      </a>
-      <a
-        href="/safety"
-        class="inline-flex min-h-10 items-center rounded-xl border border-[var(--ac-border-strong)] px-4 py-2 text-sm font-semibold text-[var(--ac-ink)] hover:bg-[var(--ac-surface-muted)]"
-      >
-        {t('people.teaserCtaSafety')}
-      </a>
-    </div>
-  </section>
+        {directory?.status === 'locked' && filters.city && (
+          <a
+            href="/people"
+            class="mt-4 inline-block text-sm font-semibold underline underline-offset-4"
+          >
+            {t('directory.allCitiesLink')}
+          </a>
+        )}
+      </section>
+    )
+  }
 </BaseLayout>

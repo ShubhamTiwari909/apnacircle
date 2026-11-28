@@ -1,0 +1,97 @@
+---
+import { env } from 'cloudflare:workers';
+import { t } from '@apnacircle/i18n';
+import BaseLayout from '../../../../layouts/BaseLayout.astro';
+import {
+  CONNECTION_REQUESTS_PATH,
+  getRequestPreferences,
+  parseRequestPreferencesForm,
+  readConnectionForm,
+  REQUEST_AUDIENCES,
+  REQUEST_PREFERENCES_PATH,
+  saveRequestPreferences,
+  type RequestPreferences,
+} from '../../../../lib/connection-requests.js';
+import { getPublicApiConfig } from '../../../../lib/meetups.js';
+import { PROFILE_AUTH_PATH, PROFILE_SESSION } from '../../../../lib/profile-editor.js';
+
+export const prerender = false;
+
+const token = Astro.cookies.get(PROFILE_SESSION)?.value;
+const config = getPublicApiConfig({
+  PUBLIC_SUPABASE_URL: env.PUBLIC_SUPABASE_URL ?? import.meta.env.PUBLIC_SUPABASE_URL,
+  PUBLIC_SUPABASE_ANON_KEY: env.PUBLIC_SUPABASE_ANON_KEY ?? import.meta.env.PUBLIC_SUPABASE_ANON_KEY,
+});
+let submitted: RequestPreferences | undefined;
+let saveError = false;
+let invalid = false;
+if (Astro.request.method === 'POST') {
+  const form = await readConnectionForm(Astro.request, Astro.url.origin);
+  if (form instanceof Response) return form;
+  if (!token) return new Response(null, { status: 401 });
+  if (!config) return new Response(null, { status: 503 });
+
+  const parsed = parseRequestPreferencesForm(form);
+  if (parsed.success) {
+    submitted = parsed.data;
+    const result = await saveRequestPreferences(config, token, submitted);
+    if (result.ok) return Astro.redirect(`${REQUEST_PREFERENCES_PATH}?saved=1`, 303);
+    Astro.response.status = result.status;
+    saveError = true;
+  } else {
+    Astro.response.status = 422;
+    invalid = true;
+  }
+} else if (!['GET', 'HEAD'].includes(Astro.request.method)) {
+  return new Response(null, { status: 405, headers: { Allow: 'GET, HEAD, POST' } });
+}
+
+const result = config && token ? await getRequestPreferences(config, token) : null;
+const signInNeeded = !token || (result?.ok === false && result.reason === 'session');
+if (!result?.ok) Astro.response.status = signInNeeded ? 401 : result?.status ?? 503;
+const settings = result?.ok ? submitted ?? result.data : null;
+const signInHref = `${PROFILE_AUTH_PATH}?${new URLSearchParams({ start: '1', returnTo: REQUEST_PREFERENCES_PATH })}`;
+const saved = Astro.request.method === 'GET' && Astro.url.searchParams.get('saved') === '1';
+---
+
+<BaseLayout title={t('connections.settings')} noindex={true}>
+  <section class="mx-auto max-w-2xl">
+    <a href={CONNECTION_REQUESTS_PATH} class="inline-flex min-h-11 items-center text-sm font-semibold underline underline-offset-4">
+      {t('connections.title')}
+    </a>
+    <h1 class="mt-2 text-3xl font-bold tracking-tight">{t('connections.settings')}</h1>
+    {settings ? (
+      <>
+        {saved && <p role="status" class="mt-4 text-sm font-semibold">{t('connections.settingsSaved')}</p>}
+        {(invalid || saveError) && (
+          <p role="alert" class="mt-4 text-sm">{t(invalid ? 'connections.settingsInvalid' : 'connections.settingsSaveFailed')}</p>
+        )}
+        <form method="post" action={REQUEST_PREFERENCES_PATH} class="mt-5 rounded-2xl border border-[var(--ac-border)] bg-[var(--ac-surface)] p-5 sm:p-6">
+          <label class="flex min-h-11 items-center gap-3 py-2 font-semibold">
+            <input type="checkbox" name="paused" checked={settings.paused} aria-describedby="pause-help" class="mt-1 size-4 shrink-0 accent-[var(--ac-accent)]" />
+            {t('connections.settingsPause')}
+          </label>
+          <p id="pause-help" class="ml-7 text-sm text-[var(--ac-ink-muted)]">{t('connections.settingsPauseHelp')}</p>
+          <fieldset class="mt-5">
+            <legend class="font-semibold">{t('connections.settingsAudience')}</legend>
+            <div class="mt-2 space-y-1">
+              {REQUEST_AUDIENCES.map((audience) => (
+                <label class="flex min-h-11 items-start gap-3 py-2 text-sm">
+                  <input type="radio" name="acceptFrom" value={audience} checked={settings.acceptFrom === audience} required class="mt-0.5 size-4 shrink-0 accent-[var(--ac-accent)]" />
+                  {t(`connections.settingsAudience.${audience}`)}
+                </label>
+              ))}
+            </div>
+          </fieldset>
+          <button class="mt-5 min-h-11 rounded-xl bg-[var(--ac-accent)] px-4 text-sm font-semibold text-white hover:bg-[var(--ac-accent-hover)]">
+            {t('connections.settingsSave')}
+          </button>
+        </form>
+      </>
+    ) : signInNeeded ? (
+      <a href={signInHref} class="mt-4 inline-flex min-h-11 items-center font-semibold underline underline-offset-4">{t('profile.signIn')}</a>
+    ) : (
+      <p role="alert" class="mt-4 text-sm">{t(result?.ok === false && result.status === 403 ? 'connections.error.restricted' : 'connections.settingsLoadFailed')}</p>
+    )}
+  </section>
+</BaseLayout>

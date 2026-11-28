@@ -134,6 +134,8 @@ export function renderMessage(payload: OutboxPayload, siteUrl: string): Rendered
     case 'banned_photo_match':
     case 'banned_photo_near_match':
       return make('Photo flagged for review', ['A photo is ready for staff review.'], 'A photo is ready for staff review.');
+    case 'people_directory_limit':
+      return make('People directory search limit reached', ['A member reached the daily search limit. Review directory activity in the audit log.'], 'A member reached the daily search limit.');
     case 'moderation_outcome':
       return make('Update on your report', ['There is an update on a report you made. Please open ApnaCircle for details.'], 'There is an update on your report.');
     case 'moderation_action':
