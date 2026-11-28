@@ -7,7 +7,7 @@ describe('renderMessage', () => {
   it.each([
     'connection_request', 'connection_accepted', 'new_report', 'new_grievance',
     'grievance_received', 'grievance_update', 'block_created', 'appeal_submitted',
-    'photo_held_review', 'banned_photo_match', 'banned_photo_near_match',
+    'photo_held_review', 'banned_photo_match', 'banned_photo_near_match', 'people_directory_limit',
   ])('renders queued %s notifications without exposing case details', (type) => {
     const message = renderMessage({ type, reason: 'private case detail' }, SITE);
     expect(message?.url).toBe(new URL(SITE).origin);

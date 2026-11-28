@@ -1,0 +1,231 @@
+---
+import { env } from 'cloudflare:workers';
+import { t } from '@apnacircle/i18n';
+import BaseLayout from '../../../layouts/BaseLayout.astro';
+import {
+  caseSources, getAbuseCase, getAbuseQueue, getStaffFactors, mfaForm, queueQuery, queueStatuses,
+  reviewAbuseCase, reviewForm, verifyStaffAuthenticator,
+} from '../../../lib/connection-abuse.js';
+import { readConnectionForm } from '../../../lib/connection-requests.js';
+import { formatMeetupWhen, getPublicApiConfig } from '../../../lib/meetups.js';
+import {
+  CONNECTION_ABUSE_PATH, profileCookieOptions, PROFILE_AUTH_PATH, PROFILE_SESSION, PROFILE_SESSION_PATH,
+} from '../../../lib/profile-editor.js';
+
+export const prerender = false;
+
+const query = queueQuery.safeParse({
+  status: Astro.url.searchParams.get('status') ?? undefined,
+  source: Astro.url.searchParams.get('source') ?? undefined,
+  after: Astro.url.searchParams.get('after') ?? undefined,
+  caseId: Astro.url.searchParams.get('case') ?? undefined,
+});
+if (!query.success) return new Response(null, { status: 400 });
+const { status, source, after, caseId } = query.data;
+function href(options: { after?: string | undefined; caseId?: string | undefined; updated?: boolean } = {}) {
+  const params = new URLSearchParams();
+  if (status !== 'active') params.set('status', status);
+  if (source !== 'all') params.set('source', source);
+  if (options.after) params.set('after', options.after);
+  if (options.caseId) params.set('case', options.caseId);
+  if (options.updated) params.set('updated', '1');
+  return params.size ? `${CONNECTION_ABUSE_PATH}?${params}` : CONNECTION_ABUSE_PATH;
+}
+
+const config = getPublicApiConfig({
+  PUBLIC_SUPABASE_URL: env.PUBLIC_SUPABASE_URL ?? import.meta.env.PUBLIC_SUPABASE_URL,
+  PUBLIC_SUPABASE_ANON_KEY: env.PUBLIC_SUPABASE_ANON_KEY ?? import.meta.env.PUBLIC_SUPABASE_ANON_KEY,
+});
+const token = Astro.cookies.get(PROFILE_SESSION)?.value;
+let postError: 'invalid' | 'changed' | 'failed' | 'mfa' | undefined;
+if (Astro.request.method === 'POST') {
+  const form = await readConnectionForm(Astro.request, Astro.url.origin);
+  if (form instanceof Response) return form;
+  if (!token) return new Response(null, { status: 401 });
+  if (!config) return new Response(null, { status: 503 });
+  if (form.get('action') === 'mfa') {
+    const parsed = mfaForm.safeParse(Object.fromEntries(form));
+    if (!parsed.success) Astro.response.status = 422;
+    else {
+      const result = await verifyStaffAuthenticator(config, token, parsed.data);
+      if (result.ok) {
+        Astro.cookies.set(PROFILE_SESSION, result.data.access_token, {
+          ...profileCookieOptions(Astro.url, PROFILE_SESSION_PATH), maxAge: Math.min(result.data.expires_in, 3600),
+        });
+        return Astro.redirect(href({ after, caseId }), 303);
+      }
+      Astro.response.status = result.status;
+    }
+    postError = 'mfa';
+  } else {
+    const parsed = reviewForm.safeParse(Object.fromEntries(form));
+    if (!parsed.success || parsed.data.id !== caseId) {
+      Astro.response.status = 422;
+      postError = 'invalid';
+    } else {
+      const result = await reviewAbuseCase(config, token, parsed.data);
+      if (result.ok) return Astro.redirect(href({ after, caseId, updated: true }), 303);
+      Astro.response.status = result.status;
+      postError = result.status === 409 ? 'changed' : result.status === 422 ? 'invalid' : 'failed';
+    }
+  }
+} else if (!['GET', 'HEAD'].includes(Astro.request.method)) {
+  return new Response(null, { status: 405, headers: { Allow: 'GET, HEAD, POST' } });
+}
+
+const detail = config && token && caseId ? await getAbuseCase(config, token, caseId) : null;
+const queue = config && token && !caseId ? await getAbuseQueue(config, token, query.data) : null;
+const result = detail ?? queue;
+if (!result?.ok && !postError) Astro.response.status = result?.status ?? (token ? 503 : 401);
+const needsSignIn = !token || (result?.ok === false && result.status === 401);
+const forbidden = result?.ok === false && result.status === 403;
+const needsMfa = result?.ok === false && result.status === 428;
+const staff = needsMfa && config && token ? await getStaffFactors(config, token) : null;
+const signInHref = `${PROFILE_AUTH_PATH}?${new URLSearchParams({ start: '1', returnTo: CONNECTION_ABUSE_PATH })}`;
+const selected = detail?.ok ? detail.data : null;
+const canReview = selected?.status === 'open' || selected?.status === 'in_review';
+const updated = Astro.request.method === 'GET' && Astro.url.searchParams.get('updated') === '1';
+const day = Date.now();
+const isOverdue = (item: { status: string; dueAt: string }) =>
+  (item.status === 'open' || item.status === 'in_review') && Date.parse(item.dueAt) <= day;
+const panel = 'rounded-2xl border border-[var(--ac-border)] bg-[var(--ac-surface)] p-4 sm:p-5';
+const input = 'mt-1 block w-full rounded-lg border border-[var(--ac-border-strong)] bg-[var(--ac-surface)] p-2.5';
+const button = 'min-h-11 rounded-lg border border-[var(--ac-border-strong)] px-4 text-sm font-semibold hover:bg-[var(--ac-surface-muted)]';
+const primaryButton = 'min-h-11 rounded-lg bg-[var(--ac-accent)] px-4 text-sm font-semibold text-white hover:bg-[var(--ac-accent-hover)]';
+function decisionLabel(decision: string, source: string) {
+  if (decision === 'start') return t('abuse.started');
+  if (decision === 'confirm') return t(source === 'automatic' ? 'abuse.restrictionConfirmed' : 'abuse.reportUpheld');
+  if (decision === 'dismiss') return t('abuse.reportDismissed');
+  return decision;
+}
+---
+
+<BaseLayout title={t('abuse.title')} noindex={true}>
+  <section class="mx-auto max-w-4xl">
+    {caseId && <a class="inline-flex min-h-11 items-center text-sm font-semibold underline underline-offset-4" href={href({ after })}>{t('abuse.back')}</a>}
+    <h1 class="text-3xl font-bold tracking-tight sm:text-4xl">{t('abuse.title')}</h1>
+
+    {postError && !(forbidden && postError !== 'mfa') && (
+      <p role="alert" class="mt-4 text-sm font-semibold">{t(`abuse.error.${postError}`)}</p>
+    )}
+    {needsSignIn ? (
+      <a href={signInHref} class="mt-4 inline-flex min-h-11 items-center font-semibold underline underline-offset-4">{t('profile.signIn')}</a>
+    ) : forbidden ? <p class="mt-4 text-sm">{t('abuse.forbidden')}</p> : needsMfa ? (
+      staff?.ok && staff.staff && staff.factors.length ? (
+        <form method="post" class:list={[panel, 'mt-5 max-w-md space-y-4']}>
+          <h2 class="text-lg font-semibold">{t('abuse.mfaTitle')}</h2>
+          <input type="hidden" name="action" value="mfa" />
+          {staff.factors.length === 1 ? <input type="hidden" name="factor" value={staff.factors[0]?.id} /> : (
+            <div>
+              <label for="factor" class="text-sm font-semibold">{t('abuse.factor')}</label>
+              <select id="factor" name="factor" class={input}>
+                {staff.factors.map((factor, i) => (
+                  <option value={factor.id}>{factor.friendly_name || t('abuse.factorNumber', { number: i + 1 })}</option>
+                ))}
+              </select>
+            </div>
+          )}
+          <div>
+            <label for="mfa-code" class="text-sm font-semibold">{t('abuse.code')}</label>
+            <input id="mfa-code" name="code" required inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" class={input} />
+          </div>
+          <button class={primaryButton}>{t('abuse.verify')}</button>
+        </form>
+      ) : <p class="mt-4 text-sm">{t(staff?.ok && staff.staff ? 'abuse.enrol' : 'abuse.forbidden')}</p>
+    ) : selected ? (
+      <>
+        {updated && <p role="status" class="mt-4 text-sm font-semibold">{t('abuse.saved')}</p>}
+        <article class:list={[panel, 'mt-5 space-y-5']}>
+          <header>
+            <p class="text-sm font-semibold text-[var(--ac-ink-muted)]">{t(`abuse.source.${selected.source}`)}</p>
+            <h2 class="mt-1 break-words text-2xl font-bold">{selected.memberName ?? t('abuse.unknownMember')}</h2>
+          </header>
+          <dl class="grid gap-3 text-sm sm:grid-cols-2">
+            <div><dt class="font-semibold">{t('abuse.status')}</dt><dd>{t(`abuse.status.${selected.status}`)}</dd></div>
+            <div><dt class="font-semibold">{t('abuse.priority')}</dt><dd>{selected.priority} · {t(`abuse.category.${selected.category}`)}</dd></div>
+            <div><dt class="font-semibold">{t('abuse.receivedAt')}</dt><dd><time datetime={selected.createdAt}>{formatMeetupWhen(selected.createdAt, null)}</time></dd></div>
+            <div><dt class="font-semibold">{t('abuse.dueAt')}</dt><dd><time datetime={selected.dueAt}>{formatMeetupWhen(selected.dueAt, null)}</time>{isOverdue(selected) && <span class="ml-2 font-bold">{t('abuse.overdue')}</span>}</dd></div>
+            {selected.trustLevel && <div><dt class="font-semibold">{t('abuse.trust')}</dt><dd>{selected.trustLevel}</dd></div>}
+            {selected.reviewerName && <div><dt class="font-semibold">{t('abuse.reviewer')}</dt><dd class="break-words">{selected.reviewerName}</dd></div>}
+            {selected.resolution && <div><dt class="font-semibold">{t('abuse.outcome')}</dt><dd>{decisionLabel(selected.resolution, selected.source)}</dd></div>}
+          </dl>
+          {(selected.atRestriction || selected.recent) && (
+            <section class="grid gap-3 border-t border-[var(--ac-border)] pt-4 sm:grid-cols-2" aria-label={t('abuse.activity')}>
+              {selected.atRestriction && <div>
+                <h3 class="font-semibold">{t('abuse.atRestriction')}</h3>
+                <ul class="mt-1 text-sm"><li>{t('abuse.declines', { count: selected.atRestriction.declines })}</li><li>{t('abuse.reporters', { count: selected.atRestriction.reporters })}</li></ul>
+              </div>}
+              {selected.recent && <div>
+                <h3 class="font-semibold">{t('abuse.recent')}</h3>
+                <ul class="mt-1 text-sm"><li>{t('abuse.sent', { count: selected.recent.sent })}</li><li>{t('abuse.declines', { count: selected.recent.declines })}</li><li>{t('abuse.reporters', { count: selected.recent.reporters })}</li></ul>
+              </div>}
+            </section>
+          )}
+          {selected.description && <section><h3 class="font-semibold">{t('abuse.report')}</h3><p class="mt-1 whitespace-pre-wrap break-words text-sm">{selected.description}</p></section>}
+          {selected.requestIntro && <section><h3 class="font-semibold">{t('abuse.requestIntro')}</h3><p class="mt-1 whitespace-pre-wrap break-words text-sm">{selected.requestIntro}</p></section>}
+        </article>
+        {canReview && (
+          <form method="post" class:list={[panel, 'mt-4 space-y-3']}>
+            <h2 class="text-lg font-semibold">{t('abuse.review')}</h2>
+            <input type="hidden" name="id" value={selected.id} />
+            <input type="hidden" name="expected" value={selected.status} />
+            <div>
+              <label for="review-note" class="text-sm font-semibold">{t('abuse.note')}</label>
+              <textarea id="review-note" name="note" rows="3" maxlength="1000" required class={input} />
+            </div>
+            <div class="flex flex-wrap gap-2">
+              {selected.status === 'open' && <button name="decision" value="start" formnovalidate class={button}>{t('abuse.start')}</button>}
+              <button name="decision" value="confirm" class={primaryButton}>{t(selected.source === 'automatic' ? 'abuse.confirm' : 'abuse.uphold')}</button>
+              {selected.source === 'member_report' && <button name="decision" value="dismiss" class={button}>{t('abuse.dismiss')}</button>}
+            </div>
+          </form>
+        )}
+        {selected.reviews.length > 0 && (
+          <section class:list={[panel, 'mt-4']}>
+            <h2 class="text-lg font-semibold">{t('abuse.history')}</h2>
+            <ol class="mt-2 divide-y divide-[var(--ac-border)]">
+              {selected.reviews.map((review) => <li class="py-3 text-sm">
+                <p class="font-semibold">{decisionLabel(review.decision, selected.source)}</p>
+                <p class="text-[var(--ac-ink-muted)]">{review.reviewerName && `${review.reviewerName} · `}<time datetime={review.createdAt}>{formatMeetupWhen(review.createdAt, null)}</time></p>
+                {review.note && <p class="mt-1 whitespace-pre-wrap break-words">{review.note}</p>}
+              </li>)}
+            </ol>
+          </section>
+        )}
+      </>
+    ) : queue?.ok ? (
+      <>
+        <form method="get" action={CONNECTION_ABUSE_PATH} class:list={[panel, 'mt-5 grid items-end gap-3 sm:grid-cols-[1fr_1fr_auto]']}>
+          <div><label for="case-status" class="text-sm font-semibold">{t('abuse.status')}</label>
+            <select id="case-status" name="status" class={input}>{queueStatuses.map((state) => <option value={state} selected={state === status}>{t(`abuse.filter.${state}`)}</option>)}</select></div>
+          <div><label for="case-source" class="text-sm font-semibold">{t('abuse.source')}</label>
+            <select id="case-source" name="source" class={input}>
+              <option value="all">{t('abuse.source.all')}</option>
+              {caseSources.map((kind) => <option value={kind} selected={kind === source}>{t(`abuse.source.${kind}`)}</option>)}
+            </select></div>
+          <button class={primaryButton}>{t('abuse.filter')}</button>
+        </form>
+        {queue.data.cases.length ? (
+          <ul class="mt-4 space-y-2">
+            {queue.data.cases.map((item) => <li>
+              <a href={href({ after, caseId: item.id })} class:list={[panel, 'grid gap-2 hover:bg-[var(--ac-surface-muted)] sm:grid-cols-[minmax(0,1fr)_auto]']}>
+                <div class="min-w-0">
+                  <p class="break-words font-bold underline underline-offset-4">{item.memberName ?? t('abuse.unknownMember')}</p>
+                  <p class="mt-1 text-sm text-[var(--ac-ink-muted)]">{t(`abuse.source.${item.source}`)} · {t(`abuse.category.${item.category}`)}</p>
+                </div>
+                <div class="text-sm sm:text-right">
+                  <p class="font-semibold">{item.priority} · {t(`abuse.status.${item.status}`)}{isOverdue(item) && ` · ${t('abuse.overdue')}`}</p>
+                  <p class="mt-1 text-[var(--ac-ink-muted)]">{t('abuse.dueAt')} <time datetime={item.dueAt}>{formatMeetupWhen(item.dueAt, null)}</time></p>
+                </div>
+              </a>
+            </li>)}
+          </ul>
+        ) : <p class="mt-5 text-[var(--ac-ink-muted)]">{t('abuse.empty')}</p>}
+        {(after || queue.data.nextCursor) && <nav aria-label={t('directory.pagination')} class="mt-4 flex flex-wrap gap-5 text-sm font-semibold">
+          {after && <a href={href()} class="inline-flex min-h-11 items-center underline underline-offset-4">{t('abuse.firstPage')}</a>}
+          {queue.data.nextCursor && <a href={href({ after: queue.data.nextCursor })} rel="next" class="inline-flex min-h-11 items-center underline underline-offset-4">{t('directory.next')}</a>}
+        </nav>}
+      </>
+    ) : <p role="alert" class="mt-4 text-sm">{t(result?.ok === false && result.status === 404 ? 'abuse.caseUnavailable' : 'abuse.loadFailed')}</p>}
+  </section>
+</BaseLayout>

@@ -1,0 +1,146 @@
+---
+import { env } from 'cloudflare:workers';
+import { t } from '@apnacircle/i18n';
+import { z } from 'zod';
+import BaseLayout from '../../../layouts/BaseLayout.astro';
+import {
+  blockConnectionMember, CONNECTION_REQUESTS_PATH, decideConnectionRequest, listConnections,
+  listConnectionRequests, readConnectionForm, removeConnection, REQUEST_PREFERENCES_PATH,
+} from '../../../lib/connection-requests.js';
+import { getPublicApiConfig } from '../../../lib/meetups.js';
+import { CONNECTION_CONTACT_PATH, PROFILE_AUTH_PATH, PROFILE_SESSION } from '../../../lib/profile-editor.js';
+
+export const prerender = false;
+
+const token = Astro.cookies.get(PROFILE_SESSION)?.value;
+const config = getPublicApiConfig({
+  PUBLIC_SUPABASE_URL: env.PUBLIC_SUPABASE_URL ?? import.meta.env.PUBLIC_SUPABASE_URL,
+  PUBLIC_SUPABASE_ANON_KEY:
+    env.PUBLIC_SUPABASE_ANON_KEY ?? import.meta.env.PUBLIC_SUPABASE_ANON_KEY,
+});
+const tab = Astro.url.searchParams.get('tab');
+const connected = tab === 'connected';
+const outgoing = tab === 'sent';
+const offset = Number(Astro.url.searchParams.get('offset') ?? '0');
+if (!Number.isSafeInteger(offset) || offset < 0 || offset > 2_147_483_622) return new Response(null, { status: 400 });
+function href(pageOffset = 0) {
+  const params = new URLSearchParams();
+  if (connected || outgoing) params.set('tab', connected ? 'connected' : 'sent');
+  if (pageOffset) params.set('offset', String(pageOffset));
+  return params.size ? `${CONNECTION_REQUESTS_PATH}?${params}` : CONNECTION_REQUESTS_PATH;
+}
+
+let decisionError: Extract<Awaited<ReturnType<typeof decideConnectionRequest>>, { ok: false }>['reason'] | undefined;
+if (Astro.request.method === 'POST') {
+  const form = await readConnectionForm(Astro.request, Astro.url.origin);
+  if (form instanceof Response) return form;
+  if (!token) return new Response(null, { status: 401 });
+  if (!config) return new Response(null, { status: 503 });
+  const action = form.get('action');
+  const id = z.guid().safeParse(form.get('id'));
+  if (!id.success) return new Response(null, { status: 400 });
+
+  let result: Awaited<ReturnType<typeof decideConnectionRequest>>;
+  switch (action) {
+    case 'accept':
+    case 'decline':
+    case 'cancel':
+      result = await decideConnectionRequest(config, token, id.data, action);
+      break;
+    case 'block':
+      result = await blockConnectionMember(config, token, connected ? { p_connection_id: id.data } : { p_request_id: id.data });
+      break;
+    case 'remove':
+      result = await removeConnection(config, token, id.data);
+      break;
+    default:
+      return new Response(null, { status: 400 });
+  }
+  if (result.ok) {
+    if (action === 'accept') return Astro.redirect(`${CONNECTION_REQUESTS_PATH}?tab=connected&updated=accepted`, 303);
+    const next = new URL(href(), Astro.url.origin);
+    if (action === 'remove' || action === 'block') next.searchParams.set('updated', action);
+    return Astro.redirect(next.pathname + next.search, 303);
+  }
+  Astro.response.status = result.status;
+  decisionError = result.reason;
+} else if (!['GET', 'HEAD'].includes(Astro.request.method)) {
+  return new Response(null, { status: 405, headers: { Allow: 'GET, HEAD, POST' } });
+}
+
+const list = config && token
+  ? await (connected ? listConnections(config, token, offset) : listConnectionRequests(config, token, outgoing, offset))
+  : null;
+const sessionNeeded = !token || (list?.ok === false && list.reason === 'session');
+if (!decisionError && !list?.ok) Astro.response.status = sessionNeeded ? 401 : list?.status ?? 503;
+const records = list?.ok ? list.data.slice(0, 25) : null;
+const hasNext = list?.ok && list.data.length > 25 && offset <= 2_147_483_597;
+const signIn = `${PROFILE_AUTH_PATH}?${new URLSearchParams({ start: '1', returnTo: CONNECTION_REQUESTS_PATH })}`;
+const actionClass = 'min-h-11 rounded-lg border border-[var(--ac-border-strong)] px-3 text-sm font-semibold hover:bg-[var(--ac-surface-muted)]';
+const updated = Astro.url.searchParams.get('updated');
+const updateMessage = updated === 'accepted' ? 'connections.updated.accepted'
+  : updated === 'remove' ? 'connections.updated.remove' : updated === 'block' ? 'connections.updated.block' : null;
+---
+
+<BaseLayout title={t('connections.title')} noindex={true}>
+  <section class="mx-auto max-w-2xl">
+    <a href="/people" class="inline-flex min-h-10 items-center text-sm font-semibold underline underline-offset-4">{t('memberProfile.back')}</a>
+    <h1 class="mt-3 text-3xl font-bold tracking-tight">{t('connections.title')}</h1>
+    {sessionNeeded ? (
+      <a href={signIn} class="mt-4 inline-flex min-h-11 items-center font-semibold underline underline-offset-4">{t('profile.signIn')}</a>
+    ) : (
+      <>
+        <nav aria-label={t('connections.title')} class="mt-4 flex flex-wrap gap-x-5">
+          <a href={CONNECTION_REQUESTS_PATH} aria-current={!outgoing && !connected ? 'page' : undefined} class:list={['inline-flex min-h-11 items-center underline underline-offset-4', { 'font-bold': !outgoing && !connected }]}>{t('connections.received')}</a>
+          <a href={`${CONNECTION_REQUESTS_PATH}?tab=sent`} aria-current={outgoing ? 'page' : undefined} class:list={['inline-flex min-h-11 items-center underline underline-offset-4', { 'font-bold': outgoing }]}>{t('connections.sent')}</a>
+          <a href={`${CONNECTION_REQUESTS_PATH}?tab=connected`} aria-current={connected ? 'page' : undefined} class:list={['inline-flex min-h-11 items-center underline underline-offset-4', { 'font-bold': connected }]}>{t('connections.active')}</a>
+          <a href={REQUEST_PREFERENCES_PATH} class="inline-flex min-h-11 items-center underline underline-offset-4">{t('connections.settings')}</a>
+        </nav>
+        {decisionError && <p role="alert" class="mt-3 text-sm">{t(`connections.error.${decisionError}`)}</p>}
+        {updateMessage && records && !decisionError && <p role="status" class="mt-3 text-sm font-semibold">{t(updateMessage)}</p>}
+        {records ? (
+          <>
+            {records.length === 0 ? (
+              <p class="mt-4 text-[var(--ac-ink-muted)]">{t(connected ? 'connections.emptyActive' : outgoing ? 'connections.emptySent' : 'connections.emptyReceived')}</p>
+            ) : (
+              <ul class="mt-3 space-y-3">
+                {records.map((record) => (
+                  <li class="rounded-xl border border-[var(--ac-border)] bg-[var(--ac-surface)] p-4">
+                    {record.publicId ? (
+                      <a href={`/u/${record.publicId}`} class="break-words font-semibold underline underline-offset-4">{record.displayName}</a>
+                    ) : <p class="font-semibold">{t('connections.member')}</p>}
+                    {record.intro && <p class="mt-1 whitespace-pre-line break-words text-sm">{record.intro}</p>}
+                    {outgoing && record.status !== 'connected' && <p class="mt-1 text-sm text-[var(--ac-ink-muted)]">{t(`connections.status.${record.status}`)}</p>}
+                    <form method="post" class="mt-3 flex flex-wrap gap-2">
+                      <input type="hidden" name="id" value={record.id} />
+                      {record.status === 'connected' ? (
+                        <>
+                          <a class="inline-flex min-h-11 items-center text-sm font-semibold underline underline-offset-4" href={`${CONNECTION_CONTACT_PATH}/${record.contactId}`}>{t('connections.contact.title')}</a>
+                          <button class={actionClass} name="action" value="remove">{t('connections.remove')}</button>
+                        </>
+                      ) : record.status === 'pending' && (
+                        outgoing ? <button class={actionClass} name="action" value="cancel">{t('connections.cancel')}</button> : (
+                          <>
+                            <button class={actionClass} name="action" value="accept">{t('connections.accept')}</button>
+                            <button class={actionClass} name="action" value="decline">{t('connections.decline')}</button>
+                          </>
+                        )
+                      )}
+                      <button class={actionClass} name="action" value="block">{t('connections.block')}</button>
+                    </form>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {(offset > 0 || hasNext) && (
+              <nav aria-label={t('directory.pagination')} class="mt-5 flex gap-5 text-sm font-semibold">
+                {offset > 0 && <a class="underline underline-offset-4" href={href(Math.max(0, offset - 25))} rel="prev">{t('directory.previous')}</a>}
+                {hasNext && <a class="underline underline-offset-4" href={href(offset + 25)} rel="next">{t('directory.next')}</a>}
+              </nav>
+            )}
+          </>
+        ) : <p role="alert" class="mt-4 text-sm">{t(`connections.error.${list?.ok === false ? list.reason : 'unavailable'}`)}</p>}
+      </>
+    )}
+  </section>
+</BaseLayout>

@@ -42,7 +42,7 @@ We ask for your consent separately for: showing your profile in discovery, showi
 - **Signed-out visitors** can see public pages only: city pages, places, guides and public meetup details (title, time, public venue and area, host display name, attendee count). They cannot see member profiles, photos or bios.
 - **Signed-in members** can see profiles and photos only according to your discovery setting and the visibility you set for each photo. Blocked members cannot see you and you cannot see them.
 - **Meetup hosts and approved attendees** can see each other's display names, and the exact meeting spot, for that meetup.
-- **Contact handles** (Instagram or WhatsApp) are shown only to the single connection you shared them with. Once someone has seen a handle we cannot technically take it back from them, so share only what you are comfortable sharing.
+- **Contact handles** (Instagram or WhatsApp usernames) are shared only with the connection you choose, after you give consent. You can revoke access from that connection’s **Contact details** page at any time. Removing the connection or blocking the member also revokes access in ApnaCircle. The other person may still have a copy of a username they already saw.
 
 ## 5. Who we share data with
 
