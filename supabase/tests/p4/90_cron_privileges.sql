@@ -16,14 +16,14 @@ select t.throws($$select public.outbox_worker_trigger()$$, '42501', 'service_rol
 reset role;
 
 -- Missing configuration fails loudly instead of silently posting to a broken URL
-select t.throws($$select public.outbox_worker_trigger()$$, 'P0001', 'a missing project id / cron secret is reported clearly', '%app.cron_secret%');
+select t.throws($$select public.outbox_worker_trigger()$$, 'P0001', 'a missing project id / cron secret is reported clearly', '%Scheduled workers are not configured%');
 select count(*) as calls_before from net.http_calls \gset
 select t.ok(:calls_before = 0, 'nothing was sent without configuration');
 
 -- Configured: one POST to the outbox worker, carrying the cron secret
-select set_config('app.supabase_project_id', 'projref', true), set_config('app.cron_secret', 'shh', true);
+insert into app_private.worker_runtime_configuration(project_ref,cron_secret) values(repeat('a',20),repeat('b',64));
 select public.outbox_worker_trigger();
-select t.ok((select count(*) = 1 and bool_and(url = 'https://projref.supabase.co/functions/v1/outbox-worker' and headers ->> 'x-cron-secret' = 'shh') from net.http_calls), 'the trigger posts to the outbox-worker function with the cron secret');
+select t.ok((select count(*) = 1 and bool_and(url = 'https://' || repeat('a',20) || '.supabase.co/functions/v1/outbox-worker' and headers ->> 'x-cron-secret' = repeat('b',64)) from net.http_calls), 'the trigger posts to the outbox-worker function with the cron secret');
 
 -- Schedules: each job name exactly once, and the retired Phase 3 jobs are gone
 select t.ok((select count(*) from cron.job where jobname in ('meetup_reminders', 'meetup_finalize', 'process_outbox')) = 3, 'the three Phase 4 jobs are scheduled');

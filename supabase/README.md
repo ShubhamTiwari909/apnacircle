@@ -54,8 +54,9 @@ Browser notifications need `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, and `VAPID_S
 Also set the same public VAPID key on the web deployment. The worker only claims messages
 for configured channels. Members manage their inbox and delivery settings at `/me/notifications`.
 
-Enable `pg_net` and configure `app.supabase_project_id` and `app.cron_secret` for the
-database cron triggers. The database secret must match the worker's `CRON_SECRET`.
+Enable `pg_net` and set the singleton row in `app_private.worker_runtime_configuration`
+with the project reference and the worker's `CRON_SECRET`. Configure the database value
+using an administrative connection. Cron triggers call the functions from this configuration.
 Deploy `outbox-worker`, `notifications`, `account-deletion`, and `nightly-jobs`.
 The worker entry points authenticate the configured cron secret and the notifications
 function authenticates the member session.

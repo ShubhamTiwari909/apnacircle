@@ -93,8 +93,8 @@ create or replace function cron.unschedule(p_jobid bigint) returns boolean
 language sql as $$ with d as (delete from cron.job where jobid = p_jobid returning 1) select exists (select 1 from d) $$;
 
 create schema if not exists net;
-create table if not exists net.http_calls (id bigserial primary key, url text, headers jsonb, body text);
-create or replace function net.http_post(url text, headers jsonb default '{}'::jsonb, body text default '{}') returns bigint
+create table if not exists net.http_calls (id bigserial primary key, url text, headers jsonb, body jsonb);
+create or replace function net.http_post(url text, headers jsonb default '{}'::jsonb, body jsonb default '{}'::jsonb) returns bigint
 language sql as $$ insert into net.http_calls (url, headers, body) values (url, headers, body) returning id $$;
 
 -- Minimal Storage metadata used by the profile-media migration and reconciliation tests.
