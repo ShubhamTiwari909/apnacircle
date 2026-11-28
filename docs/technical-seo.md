@@ -44,4 +44,6 @@ Set `POSTHOG_PROJECT_KEY` in the Vercel Production environment to the project AP
 
 The first-visit banner and **Cookies & Analytics** page set the browser’s choice. Agreeing enables anonymous counts of public meetup views and successfully saved feedback. The integration sends only the event name and a random browser identifier, using the EU ingestion endpoint. Turning analytics off removes that identifier from the browser and stops future events.
 
-For launch QA, verify successful and unsuccessful sign-in, the feedback form and staff inbox, analytics opt-in and withdrawal, and narrow-screen keyboard navigation in the Playwright journeys. Follow with the mobile accessibility and performance pass, then the independent security and launch reviews in Phase 8.
+## Browser journeys
+
+Run `pnpm exec playwright install chromium` once, then `pnpm test:e2e` from the repository root. The suite builds the Vercel app, runs it on port 4173, and uses local fixtures for Google, Supabase, Turnstile, and PostHog. It checks successful and cancelled sign-in, feedback persistence and rejection, and analytics opt-in and withdrawal. It requires no service credentials. Live verification of provider credentials is a separate check.
