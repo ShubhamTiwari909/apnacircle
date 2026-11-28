@@ -1,6 +1,7 @@
 ---
 import '../styles/global.css';
 import { t } from '@apnacircle/i18n';
+import AnalyticsPreferences from '../components/AnalyticsPreferences.astro';
 import HeaderAccount from '../components/HeaderAccount.astro';
 import { CitySwitcher, isNavigationActive, MobileNavigation, PRIMARY_NAV_LINKS } from '@apnacircle/ui';
 import { serializeJsonLd } from '../lib/meetups.js';
@@ -199,5 +200,8 @@ if (site && canonical && indexable) {
         </div>
       </div>
     </footer>
+    {currentPath.replace(/\/$/, '') !== '/cookies' && (
+      <AnalyticsPreferences server:defer banner returnTo={currentPath} />
+    )}
   </body>
 </html>

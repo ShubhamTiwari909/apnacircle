@@ -1,0 +1,37 @@
+---
+import { t } from '@apnacircle/i18n';
+import { getSecret } from 'astro:env/server';
+import { ANALYTICS_COOKIE, analyticsChoice } from '../lib/analytics.js';
+
+interface Props {
+  returnTo: string;
+  banner?: boolean;
+}
+
+const { banner = false, returnTo } = Astro.props;
+const choice = analyticsChoice(Astro.cookies.get(ANALYTICS_COOKIE)?.value);
+const available = Boolean(getSecret('POSTHOG_PROJECT_KEY')?.trim());
+const button = 'inline-flex min-h-11 items-center justify-center rounded-xl px-4 text-sm font-semibold';
+---
+
+{(!banner || (available && !choice)) && (
+  <section
+    aria-label={t('analytics.title')}
+    class:list={[
+      'rounded-2xl border border-[var(--ac-border)] bg-[var(--ac-surface)] p-4 sm:p-5',
+      banner ? 'fixed inset-x-3 bottom-3 z-40 mx-auto max-h-[80vh] max-w-2xl overflow-auto shadow-[var(--ac-shadow-card)] sm:bottom-5' : 'mb-6',
+    ]}
+  >
+    <h2 class="font-semibold">{t('analytics.title')}</h2>
+    <p class="mt-1 text-sm text-[var(--ac-ink-muted)]">{t(available ? 'analytics.explanation' : 'analytics.unavailable')}</p>
+    {!banner && available && <p class="mt-2 text-sm font-medium">{t(choice === 'allow' ? 'analytics.enabled' : 'analytics.disabled')}</p>}
+    {available && (
+      <form action="/api/analytics/consent" method="post" class="mt-4 flex flex-wrap items-center gap-2">
+        <input type="hidden" name="returnTo" value={returnTo} />
+        <button type="submit" name="choice" value="decline" class:list={[button, 'border border-[var(--ac-border-strong)] hover:bg-[var(--ac-surface-muted)]']}>{t('analytics.decline')}</button>
+        <button type="submit" name="choice" value="allow" class:list={[button, 'border border-[var(--ac-border-strong)] hover:bg-[var(--ac-accent-soft)]']}>{t('analytics.allow')}</button>
+        {banner && <a class="min-h-11 content-center px-2 text-sm font-semibold underline underline-offset-4" href="/cookies#analytics">{t('analytics.settings')}</a>}
+      </form>
+    )}
+  </section>
+)}

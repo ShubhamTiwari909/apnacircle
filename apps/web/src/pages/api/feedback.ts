@@ -1,6 +1,7 @@
 import type { APIRoute } from 'astro';
 import { flattenError } from 'zod';
 import { feedbackSubmissionSchema, type FeedbackSubmission } from '@apnacircle/types';
+import { ANALYTICS_COOKIE, captureAnalytics } from '../../lib/analytics.js';
 import { formatFeedbackReference, saveFeedback } from '../../lib/feedback.js';
 import { isAllowedOrigin } from '../../lib/origin.js';
 import { feedbackRateLimiter, SlidingWindowRateLimiter } from '../../lib/rate-limit.js';
@@ -100,10 +101,14 @@ export const POST: APIRoute = async (context) => {
   const config = getRuntimePublicApiConfig();
   const writeKey = getSecret('FEEDBACK_WRITE_KEY')?.trim();
 
-  return handleFeedbackPost(context.request, context.url, {
+  const response = await handleFeedbackPost(context.request, context.url, {
     ...(turnstileSecret ? { turnstileSecret } : {}),
     ...(siteUrl ? { siteUrl } : {}),
     ...(clientIp ? { clientIp } : {}),
     ...(config && writeKey ? { save: (submission) => saveFeedback(config, writeKey, submission) } : {}),
   });
+  if (response.status === 201) {
+    await captureAnalytics(getSecret('POSTHOG_PROJECT_KEY'), context.cookies.get(ANALYTICS_COOKIE)?.value, 'feedback_submitted');
+  }
+  return response;
 };

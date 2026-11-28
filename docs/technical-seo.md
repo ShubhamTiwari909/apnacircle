@@ -37,3 +37,11 @@ To deploy the current local checkout, run `npx vercel login` and `npx vercel lin
 3. Open **Sitemaps**, submit `sitemap.xml`, and inspect the homepage, a city guide, and a current public meetup. Use [Rich Results Test](https://search.google.com/test/rich-results) to check the rendered structured data.
 
 The sitemap omits member pages, drafts, archived content, filtered URLs, and past or cancelled meetups. Legal drafts and empty category pages carry `noindex`. Approved meetup detail pages remain reachable after their search metadata expires.
+
+## Optional analytics
+
+Set `POSTHOG_PROJECT_KEY` in the Vercel Production environment to the project API key from an EU PostHog project after the privacy notice and retention settings are approved. Keep the project’s data retention to the period stated in the notice. Without a key, the website leaves optional analytics off.
+
+The first-visit banner and **Cookies & Analytics** page set the browser’s choice. Agreeing enables anonymous counts of public meetup views and successfully saved feedback. The integration sends only the event name and a random browser identifier, using the EU ingestion endpoint. Turning analytics off removes that identifier from the browser and stops future events.
+
+For launch QA, verify successful and unsuccessful sign-in, the feedback form and staff inbox, analytics opt-in and withdrawal, and narrow-screen keyboard navigation in the Playwright journeys. Follow with the mobile accessibility and performance pass, then the independent security and launch reviews in Phase 8.

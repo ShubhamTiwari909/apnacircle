@@ -21,7 +21,7 @@ These keep the service working and secure. You cannot switch them off in our set
 
 If you accept analytics, we use PostHog to understand which pages and features are used, so we can improve ApnaCircle. We configure it to:
 
-- load only after you accept (when accepted, PostHog stores an identifier in a cookie or local storage entry named `ph_<project-key>_posthog`);
+- receive analytics events only after you accept. If you accept, ApnaCircle stores a random identifier with your choice in the first-party `ac_consent` cookie and uses it for those events;
 - **not** record sessions or screens;
 - **not** capture text you type into forms, photos, messages or contact details;
 - use the minimum identifiers needed and keep data for no more than 12 months.
@@ -34,7 +34,7 @@ We do not use advertising or cross-site tracking cookies.
 
 ## 4. Your choices
 
-You can accept or decline analytics in the banner on your first visit and change your choice at any time in **Settings, Privacy** or the "Cookie settings" link in the footer. Declining does not limit your use of ApnaCircle. You can also delete cookies in your browser, but you may then need to sign in again.
+When analytics are available, you can accept or decline them in the first-visit banner and change your choice at any time in **Analytics preferences**, on the **Cookies & Analytics** page linked from the footer. Declining does not limit your use of ApnaCircle. You can also delete cookies in your browser, but you may then need to sign in again.
 
 ## 5. More information
 

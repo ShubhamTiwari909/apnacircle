@@ -56,7 +56,7 @@ const listPath = `/${cityMeta.slug}/meetups`;
   {!meetup ? (
     <ErrorStateCard title={t('meetups.unavailableTitle')} description={t('meetups.unavailableBody')} />
   ) : (
-    <article class="max-w-3xl">
+    <article class="max-w-3xl" data-track-meetup={current ? 'true' : undefined}>
       <div class="flex flex-wrap gap-2">
         <span class="rounded-full bg-[var(--ac-warm-soft)] px-3 py-1 text-xs font-semibold text-[var(--ac-warm)]">{meetup.category_name}</span>
         <span class="rounded-full bg-[var(--ac-accent-soft)] px-3 py-1 text-xs font-semibold text-[var(--ac-accent)]">{t('meetups.publicVenueBadge')}</span>
@@ -118,3 +118,11 @@ const listPath = `/${cityMeta.slug}/meetups`;
     </article>
   )}
 </BaseLayout>
+
+<script>
+  if (document.querySelector('[data-track-meetup="true"]')) {
+    void fetch('/api/analytics/meetup-view', {
+      method: 'POST', credentials: 'same-origin', keepalive: true,
+    }).catch(() => undefined);
+  }
+</script>

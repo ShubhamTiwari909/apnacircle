@@ -1,21 +1,21 @@
 /* ApnaCircle Design Tokens — Tailwind CSS v4 compatible */
 :root {
-  --ac-bg: #faf8f4;
-  --ac-surface: #ffffff;
-  --ac-surface-muted: #f3efe6;
-  --ac-ink: #152033;
-  --ac-ink-muted: #4b5669;
-  --ac-border: #dfd8ca;
-  --ac-border-strong: #c9c0ae;
+  --ac-bg: #f3f7f3;
+  --ac-surface: #fdfdfa;
+  --ac-surface-muted: #e9efe8;
+  --ac-ink: #23372f;
+  --ac-ink-muted: #465d53;
+  --ac-border: #d5dfd6;
+  --ac-border-strong: #7b8e83;
 
   /* Primary confident accent (deep teal) — WCAG AA with #ffffff (> 5.6:1) */
   --ac-accent: #0f6466;
   --ac-accent-hover: #0b4f51;
-  --ac-accent-soft: #e6f2f2;
+  --ac-accent-soft: #e1f0e9;
 
-  /* Warm secondary accent (terracotta) */
-  --ac-warm: #b84d27;
-  --ac-warm-soft: #fbeee8;
+  /* Warm secondary accent */
+  --ac-warm: #8d513a;
+  --ac-warm-soft: #f5eae1;
 
   /* Semantic statuses */
   --ac-success: #166534;
@@ -29,7 +29,7 @@
   --ac-radius-card: 16px;
   --ac-radius-control: 12px;
   --ac-radius-pill: 9999px;
-  --ac-shadow-card: 0 1px 2px rgba(21, 32, 51, 0.05), 0 6px 18px rgba(21, 32, 51, 0.04);
+  --ac-shadow-card: 0 1px 2px rgba(35, 55, 47, 0.06), 0 6px 18px rgba(35, 55, 47, 0.04);
 }
 
 html {
@@ -45,6 +45,11 @@ body {
   color: var(--ac-ink);
   margin: 0;
   min-height: 100vh;
+}
+
+::selection {
+  background-color: var(--ac-accent-soft);
+  color: var(--ac-ink);
 }
 
 /* Visible keyboard focus across all interactive controls */
