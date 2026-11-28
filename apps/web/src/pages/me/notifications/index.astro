@@ -1,0 +1,90 @@
+---
+import { t } from '@apnacircle/i18n';
+import { getSecret } from 'astro:env/server';
+import BaseLayout from '../../../layouts/BaseLayout.astro';
+import { readConnectionForm } from '../../../lib/connection-requests.js';
+import { formatMeetupWhen } from '../../../lib/meetups.js';
+import { getMemberNotifications, NOTIFICATIONS_PATH, notificationCursor, notificationForm, updateMemberNotifications } from '../../../lib/member-notifications.js';
+import { ONBOARDING_PATH, PROFILE_AUTH_PATH, PROFILE_SESSION } from '../../../lib/profile-editor.js';
+import { getRuntimePublicApiConfig } from '../../../lib/server-config.js';
+
+export const prerender = false;
+const config = getRuntimePublicApiConfig();
+const vapid = getSecret('VAPID_PUBLIC_KEY');
+const token = Astro.cookies.get(PROFILE_SESSION)?.value;
+const params = Astro.url.searchParams;
+const cursor = notificationCursor.safeParse({ before: params.get('before'), id: params.get('id') });
+const result = config && token ? await getMemberNotifications(config, token, cursor.success ? cursor.data : null) : null;
+const inbox = result?.ok ? result.data : null;
+const needsSignIn = !token || result?.ok === false && result.status === 401;
+const signIn = PROFILE_AUTH_PATH + '?' + new URLSearchParams({ start: '1', returnTo: NOTIFICATIONS_PATH });
+let error = false;
+if (Astro.request.method === 'POST' && config && token && inbox) {
+  const form = await readConnectionForm(Astro.request, Astro.url.origin);
+  if (form instanceof Response) return form;
+  const parsed = notificationForm.safeParse({ action: form.get('action'), id: form.get('id'), email: form.has('email') });
+  if (parsed.success) {
+    const updated = await updateMemberNotifications(config, token, parsed.data);
+    if (updated.ok) return Astro.redirect(Astro.url.pathname + Astro.url.search, 303);
+    Astro.response.status = updated.status;
+  } else Astro.response.status = 422;
+  error = true;
+} else if (!inbox) Astro.response.status = needsSignIn ? 401 : result?.ok === false ? result.status : 503;
+const last = inbox?.items.at(-1);
+const older = inbox?.hasOlder && last ? NOTIFICATIONS_PATH + '?' + new URLSearchParams({ before: last.created_at, id: last.id }) : null;
+---
+<BaseLayout title={t('notifications.title')} noindex>
+  <section class="mx-auto max-w-2xl">
+    <h1 class="text-3xl font-bold tracking-tight">{t('notifications.title')}</h1>
+    {needsSignIn ? <a class="workspace-button mt-5" href={signIn}>{t('profile.signIn')}</a>
+      : !inbox ? <p role="alert" class="mt-4">{t(Astro.response.status === 403 ? 'host.memberRequired' : 'notifications.unavailable')} {Astro.response.status === 403 && <a class="workspace-link" href={ONBOARDING_PATH}>{t('onboard.title')}</a>}</p>
+      : (
+        <>
+          {error && <p class="mt-4 text-[var(--ac-danger)]" role="alert">{t('notifications.unavailable')}</p>}
+          {inbox.items.some(({read_at}) => !read_at) && (
+            <form method="post" class="mt-3"><button class="workspace-link" name="action" value="read">{t('notifications.readAll')}</button></form>
+          )}
+          {inbox.items.length ? (
+            <ul class="mt-3 divide-y divide-[var(--ac-border)] border-y border-[var(--ac-border)]">
+              {inbox.items.map(item => (
+                <li class="flex flex-wrap items-center justify-between gap-3 py-4">
+                  <div>
+                    <p class:list={[!item.read_at && 'font-semibold']}>{t(`notifications.event.${item.type}`)}</p>
+                    <time class="text-sm text-[var(--ac-ink-muted)]" datetime={item.created_at}>{formatMeetupWhen(item.created_at, null)}</time>
+                    {item.meetup_path && <div><a class="workspace-link" href={item.meetup_path}>{t('notifications.openMeetup')}</a></div>}
+                  </div>
+                  {!item.read_at && (
+                    <form method="post">
+                      <input type="hidden" name="id" value={item.id} />
+                      <button class="workspace-secondary" name="action" value="read">{t('notifications.read')}</button>
+                    </form>
+                  )}
+                </li>
+              ))}
+            </ul>
+          ) : <p class="mt-4 text-[var(--ac-ink-muted)]">{t('notifications.empty')}</p>}
+          <nav class="mt-3 flex gap-4" aria-label={t('notifications.title')}>
+            {older && <a class="workspace-link" href={older}>{t('notifications.older')}</a>}
+            {cursor.success && <a class="workspace-link" href={NOTIFICATIONS_PATH}>{t('notifications.newest')}</a>}
+          </nav>
+          <form method="post" class="workspace-form mt-5">
+            <h2 class="text-lg font-semibold">{t('notifications.preferences')}</h2>
+            <label><input type="checkbox" name="email" checked={inbox.email} /> {t('notifications.email')}</label>
+            <button class="workspace-button" name="action" value="email">{t('notifications.save')}</button>
+          </form>
+          {inbox.canPush && vapid && /^[A-Za-z0-9_-]{87}$/.test(vapid) && (
+            <section class="workspace-panel mt-5" data-member-push={vapid}
+              data-push-enabled={t('notifications.pushEnabled')} data-push-disabled={t('notifications.pushDisabled')}
+              data-push-unavailable={t('notifications.pushUnavailable')}>
+              <h2 class="text-lg font-semibold">{t('notifications.push')}</h2>
+              <p class="mt-2 text-sm text-[var(--ac-ink-muted)]">{t('notifications.pushHelp')}</p>
+              <button type="button" class="workspace-button mt-3" data-push-enable hidden>{t('notifications.pushEnable')}</button>
+              <button type="button" class="workspace-secondary mt-3" data-push-disable hidden>{t('notifications.pushDisable')}</button>
+              <p class="mt-2 text-sm" role="status" data-push-status></p>
+              <script is:inline src="/scripts/member-push.js" defer></script>
+            </section>
+          )}
+        </>
+      )}
+  </section>
+</BaseLayout>

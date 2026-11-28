@@ -16,6 +16,7 @@ const avatarUrl = 'https://lh3.googleusercontent.com/test-avatar';
 let memberName;
 let hostState;
 let event;
+let rsvp;
 
 const { Response } = globalThis;
 const codes = new Map();
@@ -107,6 +108,7 @@ export async function providerResponse(request) {
         memberName = undefined;
         hostState = undefined;
         event = undefined;
+        rsvp = null;
         reviewFixture.status = 'new';
         reviewFixture.reviews = [];
       }
@@ -207,6 +209,26 @@ export async function providerResponse(request) {
     case '/rest/v1/rpc/get_city_people_page':
       return isMember || authorization === `Bearer ${anonKey}`
         ? Response.json(publicTeaser) : new Response(null, { status: 401 });
+    case '/rest/v1/rpc/get_meetup_participation':
+      return isMember ? Response.json({
+        host: false, status: rsvp, ackVersion: 'attendee-ack-2026-11-26',
+        canJoin: rsvp !== 'approved', canLeave: rsvp === 'approved', canCheckIn: false, canLeaveFeedback: false,
+        canCancel: false, canComplete: false, spotNote: rsvp === 'approved' ? 'Meet at the north gate.' : null, attendees: [],
+      }) : new Response(null, { status: 401 });
+    case '/rest/v1/rpc/join_meetup': {
+      const args = await request.json();
+      if (!isMember || args.p_meetup_id !== meetup.id || args.p_ack_version !== 'attendee-ack-2026-11-26') {
+        return new Response(null, { status: 403 });
+      }
+      rsvp = 'approved';
+      return Response.json(rsvp);
+    }
+    case '/rest/v1/rpc/leave_meetup': {
+      const args = await request.json();
+      if (!isMember || args.p_meetup_id !== meetup.id || rsvp !== 'approved') return new Response(null, { status: 403 });
+      rsvp = 'cancelled';
+      return new Response(null, { status: 204 });
+    }
     case '/rest/v1/rpc/get_public_meetup':
       return Response.json((await request.json()).p_slug === meetup.slug ? [meetup] : []);
     case '/rest/v1/rpc/list_site_feedback': {
@@ -232,6 +254,7 @@ export async function providerResponse(request) {
       });
       return new Response(null, { status: 204 });
     }
+    case '/rest/v1/rpc/submit_site_feedback_with_screenshot':
     case '/rest/v1/rpc/submit_site_feedback': {
       const { p_write_key: key, ...fields } = await request.json();
       if (key !== writeKey) return new Response(null, { status: 403 });

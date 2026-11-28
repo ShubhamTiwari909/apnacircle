@@ -93,6 +93,16 @@ test('verified feedback is saved and shows the stored reference', async ({ page,
   await expect(page.getByRole('status').getByText(`FB-${feedback[0].id.toUpperCase()}`, { exact: false })).toBeVisible();
 });
 
+test('verified feedback can include a re-encoded screenshot', async ({ page, request }) => {
+  await fillFeedback(page, 'fixture-verified');
+  await page.getByLabel('Screenshot (optional)').setInputFiles('apps/web/public/apnacircle-icon-48.png');
+  const submitted = page.waitForResponse((response) => new URL(response.url()).pathname === '/api/feedback');
+  await page.getByRole('button', { name: 'Submit feedback' }).click();
+  expect((await submitted).status()).toBe(201);
+  const { feedback } = await (await request.get(observationsPath)).json();
+  expect(feedback).toEqual([expect.objectContaining({ p_jpeg: expect.stringMatching(/^\/9j\//) })]);
+});
+
 test('failed Turnstile verification leaves feedback unsaved', async ({ page, request }) => {
   await fillFeedback(page, 'fixture-rejected');
   const submitted = page.waitForResponse((response) => new URL(response.url()).pathname === '/api/feedback');
@@ -269,4 +279,26 @@ test('place cards use readable text in all palettes when the browser prefers dar
     await theme.selectOption(name!);
     await expect(heading).toHaveCSS('color', color!);
   }
+});
+
+test('the meeting spot is private until a member RSVPs and is hidden after withdrawal', async ({ page, context }) => {
+  const privatePath = '/me/meetups/saharanpur/test-city-walk';
+  await page.goto('/saharanpur/meetups/test-city-walk');
+  await expect(page.getByText('Meet at the north gate.')).toHaveCount(0);
+  await page.getByRole('link', { name: 'RSVP and attendee details' }).click();
+  await expect(page).toHaveURL(appOrigin + privatePath);
+  const signIn = page.getByRole('main').getByRole('link', { name: 'Sign in with Google' });
+  expect(new URL((await signIn.getAttribute('href'))!, appOrigin).searchParams.get('returnTo')).toBe(privatePath);
+
+  await context.addCookies([{ name: 'ac-member-session', value: 'fixture.member.session', url: appOrigin }]);
+  const response = await page.reload();
+  expect(response?.headers()['cache-control']).toContain('private, no-store');
+  await expect(page.getByText('Meet at the north gate.')).toHaveCount(0);
+  await page.getByLabel('I’ve read the safety guidance and understand that I’m attending at my own risk.').check();
+  await page.getByRole('button', { name: 'RSVP', exact: true }).click();
+  await expect(page.getByText('RSVP confirmed')).toBeVisible();
+  await expect(page.getByText('Meet at the north gate.')).toBeVisible();
+  await page.getByRole('button', { name: 'Withdraw RSVP' }).click();
+  await expect(page.getByText('RSVP withdrawn')).toBeVisible();
+  await expect(page.getByText('Meet at the north gate.')).toHaveCount(0);
 });

@@ -79,6 +79,7 @@ reset role;
 select t.make_meetup(2, 'Approval walk', 1, 'approval') as mid_a \gset
 select t.as_user(t.u(9));
 select t.ok(public.join_meetup(:'mid_a', 'attendee-ack-2026-11-26') = 'requested', 'approval-mode RSVP starts as requested');
+select t.ok(public.get_meetup_participation(:'mid_a')->>'status' = 'requested' and public.get_meetup_participation(:'mid_a')->>'spotNote' is null, 'pending attendees see their status but no private meeting spot');
 reset role;
 select t.as_user(t.u(4));
 select t.ok(public.join_meetup(:'mid_a', 'attendee-ack-2026-11-26') = 'requested', 'requests beyond capacity are allowed to queue');
@@ -108,6 +109,7 @@ select t.throws(format('select * from public.get_meetup_member_view(%L)', :'mid'
 reset role;
 select t.as_user(t.u(4));
 select t.ok((select spot_note from public.get_meetup_member_view(:'mid')) = 'Gate 2, near the ticket counter', 'an approved attendee sees the exact spot note');
+select t.ok(public.get_meetup_participation(:'mid')->>'spotNote' = 'Gate 2, near the ticket counter', 'the approved attendee dashboard shows the exact meeting spot');
 select t.ok((select jsonb_array_length(attendees) > 0 and not exists (select 1 from jsonb_array_elements(attendees) e where e ->> 'user_id' is not null or e ? 'id') from public.get_meetup_member_view(:'mid')), 'attendees never see internal user ids (and the list is not just empty)');
 reset role;
 select t.as_user(t.u(2));
@@ -122,6 +124,7 @@ reset role;
 insert into public.connection_blocks (blocker_id, blocked_id) values (t.u(2), t.u(6));
 select t.as_user(t.u(6));
 select t.throws(format('select * from public.get_meetup_member_view(%L)', :'mid'), 'P0404', 'a blocked attendee cannot see the private view');
+select t.throws(format('select public.get_meetup_participation(%L)', :'mid'), 'PT404', 'the attendee dashboard hides blocked meetups');
 reset role;
 insert into public.user_sanctions (user_id, level, reason) values (t.u(4), 'suspension', 'sanctioned after approval');
 select t.as_user(t.u(4));

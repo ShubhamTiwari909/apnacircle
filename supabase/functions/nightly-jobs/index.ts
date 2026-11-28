@@ -72,16 +72,9 @@ serve(async (req) => {
       }
 
       case 'reapply_deletion_ledger': {
-        // Re-apply deletion ledger after DB restore
-        const { data: ledger, error: ledgerError } = await supabase
-          .from('deletion_ledger')
-          .select('user_id_hash');
-
-        if (ledgerError) throw ledgerError;
-
-        // NOT IMPLEMENTED: re-applying deletions after a restore needs a keyed identifier match
-        // against auth.users. Report the pending entries honestly rather than claiming success.
-        result = { reapplied: 0, implemented: false, pending_ledger_entries: (ledger ?? []).length };
+        const { data: queued, error } = await supabase.rpc('queue_restored_account_erasures');
+        if (error) throw error;
+        result = { queued_count: queued };
         break;
       }
 

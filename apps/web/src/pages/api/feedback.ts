@@ -2,6 +2,7 @@ import type { APIRoute } from 'astro';
 import { flattenError } from 'zod';
 import { feedbackSubmissionSchema, type FeedbackSubmission } from '@apnacircle/types';
 import { ANALYTICS_COOKIE, captureAnalytics } from '../../lib/analytics.js';
+import { sanitizeFeedbackScreenshot } from '../../lib/feedback-screenshot.js';
 import { formatFeedbackReference, saveFeedback } from '../../lib/feedback.js';
 import { isAllowedOrigin } from '../../lib/origin.js';
 import { feedbackRateLimiter, SlidingWindowRateLimiter } from '../../lib/rate-limit.js';
@@ -15,7 +16,7 @@ export interface FeedbackHandlerDeps {
   siteUrl?: string;
   clientIp?: string;
   fetchFn?: FetchLike;
-  save?: (submission: Omit<FeedbackSubmission, 'turnstileToken'>) => ReturnType<typeof saveFeedback>;
+  save?: (submission: Omit<FeedbackSubmission, 'turnstileToken'>, screenshot?: string) => ReturnType<typeof saveFeedback>;
 }
 
 export async function handleFeedbackPost(
@@ -43,8 +44,21 @@ export async function handleFeedbackPost(
   }
 
   let body: unknown;
+  let screenshot: File | undefined;
   try {
-    body = await request.json();
+    if (request.headers.get('content-type')?.startsWith('multipart/form-data;')) {
+      if (Number(request.headers.get('content-length')) > 1_100_000) {
+        return Response.json({ error: 'invalid_screenshot' }, { status: 413 });
+      }
+      const parts = await request.formData();
+      const payload = parts.get('payload');
+      const upload = parts.get('screenshot');
+      if (typeof payload !== 'string' || payload.length > 8192 || !(upload instanceof File)) {
+        return Response.json({ error: 'invalid_screenshot' }, { status: 422 });
+      }
+      body = JSON.parse(payload);
+      screenshot = upload;
+    } else body = await request.json();
   } catch {
     return Response.json({ error: 'invalid_json' }, { status: 400 });
   }
@@ -75,7 +89,9 @@ export async function handleFeedbackPost(
   }
 
   const { category, subject, description, replyEmail } = parsed.data;
-  const saved = await deps.save?.({ category, subject, description, replyEmail });
+  const jpeg = screenshot ? await sanitizeFeedbackScreenshot(screenshot) : undefined;
+  if (jpeg === null) return Response.json({ error: 'invalid_screenshot' }, { status: 422 });
+  const saved = await deps.save?.({ category, subject, description, replyEmail }, jpeg);
   if (!saved?.ok) return Response.json({ error: 'feedback_unavailable' }, { status: 503 });
   const referenceId = formatFeedbackReference(saved.data);
 
@@ -105,7 +121,7 @@ export const POST: APIRoute = async (context) => {
     ...(turnstileSecret ? { turnstileSecret } : {}),
     ...(siteUrl ? { siteUrl } : {}),
     ...(clientIp ? { clientIp } : {}),
-    ...(config && writeKey ? { save: (submission) => saveFeedback(config, writeKey, submission) } : {}),
+    ...(config && writeKey ? { save: (submission, screenshot) => saveFeedback(config, writeKey, submission, screenshot) } : {}),
   });
   if (response.status === 201) {
     await captureAnalytics(getSecret('POSTHOG_PROJECT_KEY'), context.cookies.get(ANALYTICS_COOKIE)?.value, 'feedback_submitted');

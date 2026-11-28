@@ -12,11 +12,10 @@ import { isAllowedPushEndpoint } from '../_shared/push.ts';
 // Stop starting new deliveries after this long. Claimed rows are leased for 5 minutes, so anything
 // left over is picked up again by the next run instead of being sent twice by an overlapping one.
 const MAX_BATCH_MS = 4 * 60 * 1000;
-const REQUIRED_ENV = [
-  'CRON_SECRET', 'SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY',
-  'RESEND_API_KEY', 'FROM_EMAIL',
-  'VAPID_PUBLIC_KEY', 'VAPID_PRIVATE_KEY', 'VAPID_SUBJECT',
-] as const;
+const DELIVERY_KEYS = {
+  email: ['RESEND_API_KEY', 'FROM_EMAIL'],
+  push: ['VAPID_PUBLIC_KEY', 'VAPID_PRIVATE_KEY', 'VAPID_SUBJECT'],
+} as const;
 const FETCH_TIMEOUT_MS = 10_000;
 
 interface OutboxRow {
@@ -42,18 +41,15 @@ serve(async (req) => {
   const expected = Deno.env.get('CRON_SECRET');
   if (!expected || req.headers.get('x-cron-secret') !== expected) return json({ error: 'Unauthorized' }, 401);
 
-  // Check configuration BEFORE claiming anything. Claiming counts an attempt, so a missing secret
-  // would otherwise burn every row's retries and dead-letter the whole queue within ~30 minutes.
-  const missing = REQUIRED_ENV.filter((name) => !Deno.env.get(name));
-  if (missing.length > 0) {
-    console.error('outbox-worker is not configured; missing:', missing.join(', '));
-    return json({ error: 'not configured' }, 503);
-  }
+  // A provider without credentials must not consume its rows' retry budgets.
+  const channels = (['email', 'push'] as const).filter((channel) =>
+    DELIVERY_KEYS[channel].every((key) => Deno.env.get(key)));
+  if (!channels.length) return json({ error: 'No delivery provider configured' }, 503);
 
   const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
   const siteUrl = Deno.env.get('SITE_URL') ?? 'https://apnacircle.example';
 
-  const { data, error } = await supabase.rpc('claim_notification_outbox', { p_limit: 50 });
+  const { data, error } = await supabase.rpc('claim_notification_outbox_channels', { p_limit: 50, p_channels: channels });
   if (error) {
     console.error('claim failed', error.message);
     return json({ error: 'claim failed' }, 500);
@@ -96,9 +92,9 @@ async function deliver(supabase: ReturnType<typeof createClient>, row: OutboxRow
   if (row.channel === 'email') return await sendEmail(supabase, row, message.subject, message.text);
   if (row.channel === 'push' && row.recipient_id) {
     return await sendPush(supabase, row.recipient_id, {
-      title: message.pushTitle,
-      body: message.pushBody,
-      url: message.url,
+      title: 'ApnaCircle',
+      body: message.priority ? 'A meetup update needs your attention.' : 'You have an update. Open ApnaCircle to view it.',
+      url: new URL('/me/notifications', siteUrl).href,
       priority: message.priority,
     });
   }

@@ -69,6 +69,10 @@ const link = 'inline-flex min-h-11 items-center text-sm font-semibold text-[var(
   <section class="mx-auto max-w-3xl">
     {id && <a href={inboxHref(after)} class={link}>{t('feedbackInbox.back')}</a>}
     <h1 class="text-3xl font-bold tracking-tight sm:text-4xl">{t('feedbackInbox.title')}</h1>
+    {status === 200 && !id && <nav class="mt-2 flex flex-wrap gap-4" aria-label={t('host.staffTools')}>
+      <a href="/me/moderation/safety" class={link}>{t('safetyQueue.title')}</a>
+      <a href="/me/moderation/photos" class={link}>{t('photoReview.title')}</a>
+    </nav>}
 
     {status === 401 ? (
       <a href={signInHref} class:list={[link, 'mt-3']}>{t('profile.signIn')}</a>
@@ -90,6 +94,10 @@ const link = 'inline-flex min-h-11 items-center text-sm font-semibold text-[var(
             <dt class="font-semibold">{t('feedbackInbox.reference')}</dt>
             <dd class="break-all text-[var(--ac-ink-muted)]">{formatFeedbackReference(item.id)}</dd>
           </div>
+          {item.has_screenshot && <div>
+            <dt class="font-semibold">{t('feedback.screenshot')}</dt>
+            <dd><a class={link} href={`/me/moderation/feedback-screenshot/${item.id}`}>{t('feedback.screenshotDownload')}</a></dd>
+          </div>}
           {item.contact_email && <div>
             <dt class="font-semibold">{t('feedbackInbox.replyEmail')}</dt>
             <dd class="break-all text-[var(--ac-ink-muted)]">{item.contact_email}</dd>

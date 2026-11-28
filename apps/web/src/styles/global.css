@@ -1,7 +1,15 @@
-@import "tailwindcss";
+@import "tailwindcss" source(none);
 @import "@apnacircle/ui/tokens.css";
+@source "../";
 @source "../../../../packages/ui/src";
-@source "../../node_modules/@zentauri-ui/zentauri-components";
+
+/* Scan the primitives we ship, without scanning the library's compiled bundles and source maps. */
+@source "../../node_modules/@zentauri-ui/zentauri-components/src/ui/alert";
+@source "../../node_modules/@zentauri-ui/zentauri-components/src/ui/badge";
+@source "../../node_modules/@zentauri-ui/zentauri-components/src/ui/buttons";
+@source "../../node_modules/@zentauri-ui/zentauri-components/src/ui/card";
+@source "../../node_modules/@zentauri-ui/zentauri-components/src/ui/empty-state";
+@source "../../node_modules/@zentauri-ui/zentauri-components/src/ui/skeleton";
 
 /* All three site palettes are light. Library dark utilities require an explicit dark theme. */
 @custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));

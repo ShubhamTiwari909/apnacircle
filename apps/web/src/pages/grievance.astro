@@ -7,4 +7,6 @@ import { t } from '@apnacircle/i18n';
   policyId="06-grievance-and-appeals"
   pageTitle={t('footer.grievanceLink')}
   description="Grievance Officer contact, complaint resolution timelines, takedown duties, and appeals."
-/>
+>
+  <a slot="preferences" class="workspace-link mb-4" href="/me/grievances">{t('grievanceFlow.title')}</a>
+</PolicyDocument>

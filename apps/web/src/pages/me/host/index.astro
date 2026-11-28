@@ -2,7 +2,7 @@
 import { t } from '@apnacircle/i18n';
 import BaseLayout from '../../../layouts/BaseLayout.astro';
 import { readConnectionForm } from '../../../lib/connection-requests.js';
-import { applyToHost, getHostWorkspace, hostForm } from '../../../lib/hosting.js';
+import { applyToHost, getHostWorkspace, hostForm, hostMeetupEditorPath } from '../../../lib/hosting.js';
 import { formatMeetupWhen } from '../../../lib/meetups.js';
 import { CREATE_MEETUP_PATH, FEEDBACK_INBOX_PATH, HOST_PATH, HOST_REVIEW_PATH, ONBOARDING_PATH, PROFILE_AUTH_PATH, PROFILE_SESSION } from '../../../lib/profile-editor.js';
 import { getRuntimePublicApiConfig } from '../../../lib/server-config.js';
@@ -66,7 +66,10 @@ if (Astro.request.method === 'POST' && config && token && workspace && !workspac
             <h2 class="text-lg font-semibold">{t('host.yourMeetups')}</h2>
             <ul class="mt-2 divide-y divide-[var(--ac-border)] border-y border-[var(--ac-border)]">
               {workspace.meetups.map((meetup) => <li class="py-3">
-                {meetup.status === 'published' ? <a class="font-semibold underline" href={`/${meetup.city_slug}/meetups/${meetup.slug}`}>{meetup.title}</a> : <p class="font-semibold">{meetup.title}</p>}
+                {['published', 'completed', 'cancelled'].includes(meetup.status) ? <a class="font-semibold underline" href={`/me/meetups/${meetup.city_slug}/${meetup.slug}`}>{meetup.title}</a> : <p class="font-semibold">{meetup.title}</p>}
+                {workspace.host_status === 'approved' && !['cancelled', 'completed'].includes(meetup.status) && Date.parse(meetup.starts_at) > Date.now() && (
+                  <a class="workspace-link" href={hostMeetupEditorPath(meetup.meetup_id)}>{t('host.editMeetup')}</a>
+                )}
                 <p class="text-sm text-[var(--ac-ink-muted)]">{formatMeetupWhen(meetup.starts_at, null)} · {t(`host.meetupStatus.${meetup.status}`)}</p>
               </li>)}
             </ul>

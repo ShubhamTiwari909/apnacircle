@@ -1,0 +1,146 @@
+---
+import { t } from '@apnacircle/i18n';
+import { ACTIVE_CITIES } from '@apnacircle/types';
+import BaseLayout from '../../../../layouts/BaseLayout.astro';
+import { readConnectionForm } from '../../../../lib/connection-requests.js';
+import { getMeetupParticipation, readParticipationAction, updateMeetupParticipation } from '../../../../lib/meetup-participation.js';
+import { formatMeetupWhen, getPublicMeetup } from '../../../../lib/meetups.js';
+import { LEGACY_PROFILE_SESSION, ONBOARDING_PATH, PROFILE_AUTH_PATH, PROFILE_SESSION } from '../../../../lib/profile-editor.js';
+import { getRuntimePublicApiConfig } from '../../../../lib/server-config.js';
+
+export const prerender = false;
+const city = ACTIVE_CITIES.find((item) => item.slug === Astro.params.city);
+const slug = Astro.params.slug ?? '';
+if (!city || !/^[a-z0-9-]{1,80}$/.test(slug)) return Astro.rewrite('/404');
+
+const path = `/me/meetups/${city.slug}/${slug}`;
+const publicPath = `/${city.slug}/meetups/${slug}`;
+const signIn = PROFILE_AUTH_PATH + '?' + new URLSearchParams({ start: '1', returnTo: path });
+const token = (Astro.cookies.get(PROFILE_SESSION) ?? Astro.cookies.get(LEGACY_PROFILE_SESSION))?.value;
+const config = getRuntimePublicApiConfig();
+const result = config && token ? await getPublicMeetup(config, city.slug, slug) : null;
+const meetup = result?.ok ? result.data : null;
+const viewer = config && token && meetup ? await getMeetupParticipation(config, token, meetup.id) : null;
+const participation = viewer?.ok ? viewer.data : null;
+const needsSignIn = !token || (viewer?.ok === false && viewer.status === 401);
+let error = false;
+
+if (Astro.request.method === 'POST' && config && token && meetup && participation) {
+  const form = await readConnectionForm(Astro.request, Astro.url.origin);
+  if (form instanceof Response) return form;
+  const parsed = readParticipationAction(form);
+  if (parsed.success) {
+    const updated = await updateMeetupParticipation(config, token, meetup.id, parsed.data);
+    if (updated.ok) return Astro.redirect(path + '?saved=1', 303);
+    Astro.response.status = updated.status;
+  } else Astro.response.status = 422;
+  error = true;
+} else if (!participation) {
+  Astro.response.status = needsSignIn ? 401 : viewer?.ok === false ? viewer.status : result?.ok ? 404 : 503;
+}
+const postSaved = Astro.url.searchParams.get('saved') === '1' && !error;
+const acceptancesOpen = Boolean(meetup?.status === 'published' && Date.parse(meetup.starts_at) > Date.now());
+const ratings = [1, 2, 3, 4, 5];
+---
+
+<BaseLayout title={meetup?.title ?? t('participation.title')} noindex activeCitySlug={city.slug} signedIn={!needsSignIn}>
+  <section class="mx-auto max-w-2xl">
+    <a class="workspace-link" href={publicPath}>{t('participation.back')}</a>
+    <h1 class="mt-2 text-3xl font-bold tracking-tight sm:text-4xl">{meetup?.title ?? t('participation.title')}</h1>
+    {meetup && <p class="mt-2 text-[var(--ac-ink-muted)]">{formatMeetupWhen(meetup.starts_at, meetup.ends_at)}</p>}
+
+    {needsSignIn ? <a class="workspace-button mt-5" href={signIn}>{t('profile.signIn')}</a>
+      : !participation ? <p class="mt-4" role="alert">{t('participation.unavailable')}</p>
+      : (
+        <>
+          {postSaved && <p class="mt-4" role="status">{t('participation.saved')}</p>}
+          {error && <p class="mt-4 text-[var(--ac-danger)]" role="alert">{t('participation.error')}</p>}
+          {participation.status && <p class="mt-5 font-semibold">{t(`participation.status.${participation.status}`)}</p>}
+
+          {participation.canJoin && (
+            <form method="post" class="workspace-form mt-5">
+              <input type="hidden" name="action" value="join" />
+              <input type="hidden" name="acknowledgement" value={participation.ackVersion} />
+              <label><input type="checkbox" name="accepted" required /> {t('participation.acknowledge')}</label>
+              <a class="workspace-link" href="/safety" target="_blank" rel="noopener">{t('meetups.detail.safetyLink')}</a>
+              <button class="workspace-button">{t(meetup?.join_mode === 'approval' ? 'participation.request' : 'participation.join')}</button>
+            </form>
+          )}
+          {!participation.host && !participation.status && !participation.canJoin && acceptancesOpen && (
+            <p class="mt-4">{t('participation.ineligible')} <a class="workspace-link" href={ONBOARDING_PATH}>{t('onboard.title')}</a></p>
+          )}
+          {participation.canLeave && (
+            <form method="post" class="mt-4">
+              <button class="workspace-secondary" name="action" value="leave">{t('participation.leave')}</button>
+            </form>
+          )}
+          {participation.spotNote && (
+            <section class="mt-6">
+              <h2 class="text-lg font-semibold">{t('participation.spot')}</h2>
+              <p class="mt-2 whitespace-pre-wrap break-words">{participation.spotNote}</p>
+            </section>
+          )}
+          {(participation.host || participation.attendees.length > 0) && (
+            <section class="mt-6">
+              <h2 class="text-lg font-semibold">{t('participation.attendees')}</h2>
+              {participation.attendees.length === 0 ? <p class="mt-2 text-[var(--ac-ink-muted)]">{t('participation.none')}</p> : (
+                <ul class="mt-2 divide-y divide-[var(--ac-border)] border-y border-[var(--ac-border)]">
+                  {participation.attendees.map((attendee) => (
+                    <li class="flex flex-wrap items-center justify-between gap-2 py-3">
+                      <div class="min-w-0 break-words">
+                        <p class="font-semibold">{attendee.display_name}</p>
+                        <p class="text-sm text-[var(--ac-ink-muted)]">{t(`participation.status.${attendee.status}`)}</p>
+                      </div>
+                      {participation.host && attendee.user_id && (
+                        <div class="flex flex-wrap gap-2">
+                          {acceptancesOpen && (attendee.status === 'requested' || attendee.status === 'approved') && (
+                            <form method="post" class="flex flex-wrap gap-2">
+                              <input type="hidden" name="action" value="attendee" />
+                              <input type="hidden" name="member" value={attendee.user_id} />
+                              {attendee.status === 'requested' ? (
+                                <>
+                                  <button class="workspace-secondary" name="decision" value="approve">{t('participation.approve')}</button>
+                                  <button class="workspace-secondary" name="decision" value="decline">{t('participation.decline')}</button>
+                                </>
+                              ) : <button class="workspace-secondary" name="decision" value="remove">{t('participation.remove')}</button>}
+                            </form>
+                          )}
+                          {participation.canCheckIn && attendee.status === 'approved' && (
+                            <form method="post">
+                              <input type="hidden" name="member" value={attendee.user_id} />
+                              <button class="workspace-button" name="action" value="check-in">{t('participation.checkIn')}</button>
+                            </form>
+                          )}
+                        </div>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          )}
+          {participation.canCancel && (
+            <form method="post" class="workspace-form mt-6">
+              <label>{t('participation.cancelReason')}<textarea name="reason" rows="2" minlength="5" maxlength="300" required></textarea></label>
+              <button class="workspace-secondary" name="action" value="cancel">{t('participation.cancel')}</button>
+            </form>
+          )}
+          {participation.canComplete && (
+            <form method="post" class="mt-5">
+              <button class="workspace-secondary" name="action" value="complete">{t('participation.complete')}</button>
+            </form>
+          )}
+          {participation.canLeaveFeedback && (
+            <form method="post" class="workspace-form mt-6">
+              <h2 class="text-lg font-semibold">{t('participation.feedback')}</h2>
+              <p class="text-sm text-[var(--ac-ink-muted)]">{t('participation.ratingHelp')}</p>
+              <label>{t('participation.safe')}<select name="safe" required><option value="">{t('participation.chooseRating')}</option>{ratings.map((rating) => <option value={rating}>{rating}</option>)}</select></label>
+              <label>{t('participation.return')}<select name="return" required><option value="">{t('participation.chooseRating')}</option>{ratings.map((rating) => <option value={rating}>{rating}</option>)}</select></label>
+              <label>{t('participation.note')}<textarea name="note" rows="3" maxlength="1000"></textarea></label>
+              <button class="workspace-button" name="action" value="feedback">{t('participation.send')}</button>
+            </form>
+          )}
+        </>
+      )}
+  </section>
+</BaseLayout>

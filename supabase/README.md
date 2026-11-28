@@ -47,11 +47,28 @@ on conflict (singleton) do update set key_hash = excluded.key_hash;
 Hash the key without a trailing newline. The inbox is at `/me/moderation/feedback` and uses the active staff role and authenticator checks from the connection-abuse dashboard. Migration `025_feedback_review.sql` adds status filters and the review workflow. Start a review before approving or dismissing a submission. Each final decision requires an internal note and appears in the review history.
 
 ## Outbox worker configuration
-`outbox-worker` returns **503 without claiming anything** unless every one of these is set: `CRON_SECRET`,
-`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `RESEND_API_KEY`, `FROM_EMAIL`, `VAPID_PUBLIC_KEY`,
-`VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`. (Claiming counts an attempt, so a missing secret would otherwise
-dead-letter the whole queue.) The database also needs `app.supabase_project_id` and `app.cron_secret` set
-for the cron triggers in migration 008, which now raise a clear error when either is missing.
+
+Set `CRON_SECRET` and `SITE_URL` on `outbox-worker`. Supabase supplies `SUPABASE_URL`
+and `SUPABASE_SERVICE_ROLE_KEY`. Email needs `RESEND_API_KEY` and a verified `FROM_EMAIL`.
+Browser notifications need `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, and `VAPID_SUBJECT`.
+Also set the same public VAPID key on the web deployment. The worker only claims messages
+for configured channels. Members manage their inbox and delivery settings at `/me/notifications`.
+
+Enable `pg_net` and configure `app.supabase_project_id` and `app.cron_secret` for the
+database cron triggers. The database secret must match the worker's `CRON_SECRET`.
+Deploy `outbox-worker`, `notifications`, `account-deletion`, and `nightly-jobs`.
+The worker entry points authenticate the configured cron secret and the notifications
+function authenticates the member session.
+Test delivery with an isolated test member before enabling invitations.
+
+## Account data and erasure
+
+Members request JSON exports and can schedule or cancel account erasure at `/me/privacy`.
+The erasure job runs after a 14-day grace period, removes profile images through the
+Storage API, then removes the Auth user and its dependent rows in one transaction. It
+retains the deletion ledger and strips staff attribution from retained audit records.
+For backup restores, use the current deletion ledger before opening the restored project
+to users. The active analytics integration uses unlinked browser identifiers.
 
 ## Profile editor configuration
 

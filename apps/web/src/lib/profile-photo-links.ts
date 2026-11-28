@@ -14,6 +14,7 @@ export async function fetchSignedProfilePhotoUrls(
   photoIds: string[],
   variant: 'thumb' | 'display',
   fetchFn: FetchLike = fetch,
+  review = false,
 ): Promise<Map<string, string>> {
   const links = new Map<string, string>();
   if (!photoIds.length) return links;
@@ -25,7 +26,7 @@ export async function fetchSignedProfilePhotoUrls(
         Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ photoIds, variant }),
+      body: JSON.stringify({ photoIds, variant, ...(review ? { review: true } : {}) }),
       signal: AbortSignal.timeout(4000),
     });
     if (!response.ok) return links;
@@ -42,7 +43,7 @@ export async function fetchSignedProfilePhotoUrls(
         ticket &&
         /^[1-9]\d{0,11}\.[0-9a-f]{64}$/.test(ticket)
       ) {
-        links.set(id, `?${new URLSearchParams({ id, variant, ticket })}`);
+        links.set(id, `?${new URLSearchParams({ id, variant, ticket, ...(review ? { review: '1' } : {}) })}`);
       }
     }
   } catch {

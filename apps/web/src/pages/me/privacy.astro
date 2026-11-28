@@ -1,0 +1,74 @@
+---
+import { t } from '@apnacircle/i18n';
+import { z } from 'zod';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import { authenticatedRequest } from '../../lib/connection-abuse.js';
+import { readConnectionForm } from '../../lib/connection-requests.js';
+import { formatMeetupWhen } from '../../lib/meetups.js';
+import { PROFILE_AUTH_PATH, PROFILE_SESSION } from '../../lib/profile-editor.js';
+import { getRuntimePublicApiConfig } from '../../lib/server-config.js';
+
+export const prerender = false;
+const path='/me/privacy';
+const token=Astro.cookies.get(PROFILE_SESSION)?.value;
+const config=getRuntimePublicApiConfig();
+const datetime=z.iso.datetime({offset:true}).nullable();
+const signIn=PROFILE_AUTH_PATH+'?'+new URLSearchParams({start:'1',returnTo:path});
+let error=false;
+if (Astro.request.method==='POST' && config && token) {
+  const form=await readConnectionForm(Astro.request,Astro.url.origin);
+  if (form instanceof Response) return form;
+  const action=form.get('action');
+  if (action==='export') {
+    const result=await authenticatedRequest(config,token,'/rest/v1/rpc/export_my_account_data',
+      async response=>z.record(z.string(),z.unknown()).parse(await response.json()),{});
+    if (result.ok) return new Response(JSON.stringify(result.data,null,2),{headers:{
+      'Content-Type':'application/json; charset=utf-8','Cache-Control':'private, no-store',
+      'Content-Disposition':'attachment; filename="apnacircle-account-data.json"',
+    }});
+    Astro.response.status=result.status;
+  } else if (action==='cancel' || (action==='schedule' && form.has('confirm'))) {
+    const result=await authenticatedRequest(config,token,'/rest/v1/rpc/request_my_account_erasure',
+      async response=>datetime.parse(await response.json()),{p_cancel:action==='cancel'});
+    if (result.ok) return Astro.redirect(path,303);
+    Astro.response.status=result.status;
+  } else Astro.response.status=422;
+  error=true;
+}
+const result=config&&token?await authenticatedRequest(config,token,'/rest/v1/rpc/get_my_account_erasure',
+  async response=>datetime.parse(await response.json()),{}):null;
+const due=result?.ok?result.data:null;
+if (!error&&!result?.ok) Astro.response.status=!token?401:result?.ok===false?result.status:503;
+---
+<BaseLayout title={t('dataRights.title')} noindex>
+  <section class="mx-auto max-w-2xl">
+    <a class="workspace-link" href="/me/profile">{t('profile.title')}</a>
+    <h1 class="text-3xl font-bold tracking-tight">{t('dataRights.title')}</h1>
+    {Astro.response.status===401 ? <a class="workspace-button mt-5" href={signIn}>{t('profile.signIn')}</a>
+      : !result?.ok ? <p class="mt-4" role="alert">{t('dataRights.unavailable')}</p>
+      : (
+        <>
+          {error && <p class="mt-4 text-[var(--ac-danger)]" role="alert">
+            {t(Astro.response.status===428?'dataRights.reauth':'dataRights.unavailable')}
+            {Astro.response.status===428 && <a class="workspace-link" href={signIn}>{t('profile.signIn')}</a>}
+          </p>}
+          <form method="post" class="workspace-form mt-5">
+            <h2 class="text-lg font-semibold">{t('dataRights.export')}</h2>
+            <p>{t('dataRights.exportHelp')}</p>
+            <button class="workspace-button" name="action" value="export">{t('dataRights.download')}</button>
+          </form>
+          <form method="post" class="workspace-form mt-5">
+            <h2 class="text-lg font-semibold">{t('dataRights.delete')}</h2>
+            {due ? <>
+              <p>{t('dataRights.due',{date:formatMeetupWhen(due,null)})}</p>
+              <button class="workspace-secondary" name="action" value="cancel">{t('dataRights.cancel')}</button>
+            </> : <>
+              <p>{t('dataRights.deleteHelp')}</p>
+              <label><input type="checkbox" name="confirm" required /> {t('dataRights.confirm')}</label>
+              <button class="workspace-secondary" name="action" value="schedule">{t('dataRights.schedule')}</button>
+            </>}
+          </form>
+        </>
+      )}
+  </section>
+</BaseLayout>

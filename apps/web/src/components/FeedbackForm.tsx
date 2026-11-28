@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { t } from '@apnacircle/i18n';
+import { prepareFeedbackScreenshot } from '../lib/prepare-feedback-screenshot.js';
 import { FEEDBACK_CATEGORIES, feedbackSubmissionSchema, type FeedbackCategory } from '@apnacircle/types';
 
 declare global {
@@ -41,6 +42,7 @@ export function FeedbackForm({ turnstileSiteKey }: FeedbackFormProps) {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [referenceId, setReferenceId] = useState<string | null>(null);
 
+  const screenshotInput = useRef<HTMLInputElement>(null);
   const widgetContainerRef = useRef<HTMLDivElement | null>(null);
   const widgetIdRef = useRef<string | undefined>(undefined);
 
@@ -107,11 +109,24 @@ export function FeedbackForm({ turnstileSiteKey }: FeedbackFormProps) {
 
     setSubmitting(true);
     try {
-      const response = await fetch('/api/feedback', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(parsed.data),
-      });
+      const file = screenshotInput.current?.files?.item(0);
+      let body: BodyInit = JSON.stringify(parsed.data);
+      const headers = new Headers({ 'content-type': 'application/json' });
+      if (file) {
+        let screenshot: Blob;
+        try {
+          screenshot = await prepareFeedbackScreenshot(file);
+        } catch {
+          setErrorMessage(t('feedback.screenshotInvalid'));
+          return;
+        }
+        const parts = new FormData();
+        parts.append('payload', body);
+        parts.append('screenshot', screenshot, 'feedback.jpg');
+        body = parts;
+        headers.delete('content-type');
+      }
+      const response = await fetch('/api/feedback', { method: 'POST', headers, body });
 
       if (response.status === 429) {
         setErrorMessage(t('feedback.errorRateLimit'));
@@ -127,6 +142,8 @@ export function FeedbackForm({ turnstileSiteKey }: FeedbackFormProps) {
       if (!response.ok || !payload.ok || !payload.referenceId) {
         if (payload.error === 'turnstile_failed') {
           setErrorMessage(t('feedback.errorTurnstile'));
+        } else if (payload.error === 'invalid_screenshot') {
+          setErrorMessage(t('feedback.screenshotInvalid'));
         } else {
           setErrorMessage(t('feedback.errorGeneric'));
         }
@@ -262,7 +279,14 @@ export function FeedbackForm({ turnstileSiteKey }: FeedbackFormProps) {
         <p className="mb-2 text-sm font-semibold text-[var(--ac-ink)]">
           {t('feedback.turnstileLabel')}
         </p>
-        <div ref={widgetContainerRef} className="min-h-[65px]" />
+        <div>
+        <label htmlFor="feedback-screenshot" className="block text-sm font-semibold">{t('feedback.screenshot')}</label>
+        <input ref={screenshotInput} id="feedback-screenshot" type="file" accept="image/png,image/jpeg,image/webp"
+          aria-describedby="feedback-screenshot-help" className="mt-1.5 block max-w-full text-sm" />
+        <p id="feedback-screenshot-help" className="mt-1 text-sm text-[var(--ac-ink-muted)]">{t('feedback.screenshotHelp')}</p>
+      </div>
+
+      <div ref={widgetContainerRef} className="min-h-[65px]" />
       </div>
 
       <button

@@ -17,6 +17,7 @@ const feedbackSummary = z.object({
 const feedbackDetail = feedbackSummary.extend({
   message: z.string(),
   contact_email: z.string().nullable(),
+  has_screenshot: z.boolean().optional(),
   reviews: z.array(z.object({
     id: feedbackId,
     action: z.enum(feedbackDecisions),
@@ -48,13 +49,15 @@ export function saveFeedback(
   config: PublicApiConfig,
   writeKey: string,
   submission: Omit<FeedbackSubmission, 'turnstileToken'>,
+  screenshot?: string,
 ) {
-  return callPublicRpc(config, 'submit_site_feedback', {
+  return callPublicRpc(config, screenshot ? 'submit_site_feedback_with_screenshot' : 'submit_site_feedback', {
     p_write_key: writeKey,
     p_category: submission.category,
     p_subject: submission.subject,
     p_message: submission.description,
     p_contact_email: submission.replyEmail || null,
+    ...(screenshot ? { p_jpeg: screenshot } : {}),
   }, feedbackId, fetch);
 }
 

@@ -8,7 +8,7 @@ import { CONNECTION_ABUSE_PATH, FEEDBACK_INBOX_PATH, HOST_REVIEW_PATH, profileCo
 import { getRuntimePublicApiConfig } from '../../../lib/server-config.js';
 
 export const prerender = false;
-const destinations = [FEEDBACK_INBOX_PATH, HOST_REVIEW_PATH, CONNECTION_ABUSE_PATH];
+const destinations = [FEEDBACK_INBOX_PATH, HOST_REVIEW_PATH, CONNECTION_ABUSE_PATH, '/me/moderation/photos', '/me/moderation/safety', '/me/grievances?queue=1'];
 const next = Astro.url.searchParams.get('returnTo') ?? '';
 const returnTo = destinations.includes(next) ? next : FEEDBACK_INBOX_PATH;
 const token = Astro.cookies.get(PROFILE_SESSION)?.value;

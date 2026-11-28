@@ -15,10 +15,10 @@ const handler: APIRoute = async ({ request, url, cookies }) => {
   const config = getRuntimePublicApiConfig();
   if (!config) return new Response(null, { status: 503 });
 
-  // Only the staff API may request a moderation image.
+  // The Edge Function authorizes the staff role and binds review mode to the signed ticket.
   const params = new URLSearchParams();
   const keys = {
-    GET: ['id', 'variant', 'ticket'],
+    GET: ['id', 'variant', 'ticket', 'review'],
     POST: ['visibility'],
     DELETE: ['id'],
   } as const;
@@ -35,10 +35,12 @@ const handler: APIRoute = async ({ request, url, cookies }) => {
     headers.set('Content-Type', 'image/jpeg');
   }
   try {
+    const body = request.method === 'POST' ? await request.arrayBuffer() : null;
+    if (body && body.byteLength > 4 * 1024 * 1024) return new Response(null, { status: 413 });
     const response = await fetch(`${config.url}/functions/v1/profile-photos?${params}`, {
       method: request.method,
       headers,
-      body: request.method === 'POST' ? request.body : null,
+      body,
       signal: AbortSignal.timeout(25000),
     });
     const type = response.headers.get('Content-Type');

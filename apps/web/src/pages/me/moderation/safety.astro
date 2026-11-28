@@ -1,0 +1,97 @@
+---
+import { t } from '@apnacircle/i18n';
+import BaseLayout from '../../../layouts/BaseLayout.astro';
+import { readConnectionForm } from '../../../lib/connection-requests.js';
+import { formatMeetupWhen } from '../../../lib/meetups.js';
+import { PROFILE_AUTH_PATH, PROFILE_SESSION, STAFF_AUTH_PATH } from '../../../lib/profile-editor.js';
+import { listSafetyReports, reviewSafetyReport, safetyDecision, safetyFilters, safetyPath, sanctionLevels } from '../../../lib/safety-reports.js';
+import { getRuntimePublicApiConfig } from '../../../lib/server-config.js';
+
+export const prerender = false;
+const token=Astro.cookies.get(PROFILE_SESSION)?.value;
+const config=getRuntimePublicApiConfig();
+const filters=safetyFilters.parse({ closed:Astro.url.searchParams.get('closed')==='1', offset:Astro.url.searchParams.get('offset') });
+const href=(closed:boolean,offset=0)=>safetyPath+'?'+new URLSearchParams({closed:closed?'1':'0',offset:String(offset)});
+let error=false;
+if (Astro.request.method==='POST' && config && token) {
+  const body=await readConnectionForm(Astro.request,Astro.url.origin);
+  if (body instanceof Response) return body;
+  const decision=safetyDecision.safeParse(Object.fromEntries(body));
+  if (decision.success) {
+    const result=await reviewSafetyReport(config,token,decision.data);
+    if (result.ok) return Astro.redirect(href(filters.closed,filters.offset),303);
+    Astro.response.status=result.status;
+  } else Astro.response.status=422;
+  error=true;
+}
+const result=config&&token?await listSafetyReports(config,token,filters):null;
+const queue=result?.ok?result.data:null;
+if (!error&&!queue) Astro.response.status=!token?401:result?.ok===false?result.status:503;
+const signIn=PROFILE_AUTH_PATH+'?'+new URLSearchParams({start:'1',returnTo:safetyPath});
+---
+
+<BaseLayout title={t('safetyQueue.title')} noindex>
+  <section class="mx-auto max-w-3xl">
+    <nav class="flex flex-wrap gap-4" aria-label={t('host.staffTools')}>
+      <a class="workspace-link" href="/me/moderation/feedback">{t('feedbackInbox.title')}</a>
+      <a class="workspace-link" href="/me/grievances?queue=1">{t('grievanceFlow.queue')}</a>
+    </nav>
+    <h1 class="text-3xl font-bold tracking-tight">{t('safetyQueue.title')}</h1>
+    {Astro.response.status===401 ? <a class="workspace-button mt-4" href={signIn}>{t('profile.signIn')}</a>
+      : Astro.response.status===428 ? <a class="workspace-link mt-4" href={STAFF_AUTH_PATH+'?'+new URLSearchParams({returnTo:safetyPath})}>{t('feedbackInbox.verify')}</a>
+      : !queue ? <p role="alert" class="mt-4">{t('safetyQueue.unavailable')}</p>
+      : (
+        <>
+          <nav class="mt-3 flex flex-wrap gap-4" aria-label={t('safetyQueue.title')}>
+            <a class="workspace-link" aria-current={!filters.closed?'page':undefined} href={href(false)}>{t('safetyQueue.active')}</a>
+            <a class="workspace-link" aria-current={filters.closed?'page':undefined} href={href(true)}>{t('safetyQueue.closed')}</a>
+          </nav>
+          {error && <p class="mt-4 text-[var(--ac-danger)]" role="alert">{t('safetyQueue.saveError')}</p>}
+          {!queue.length && <p class="mt-3 text-[var(--ac-ink-muted)]">{t('safetyQueue.empty')}</p>}
+          <ul class="mt-3 space-y-4">
+            {queue.slice(0,25).map(item=>(
+              <li class="workspace-panel">
+                <p class="text-sm font-semibold">{item.priority} · {t('safetyQueue.due')} {formatMeetupWhen(item.sla_due_at,null)}</p>
+                <h2 class="my-1 text-lg font-semibold">{t(`safetyReport.category.${item.category}`)}</h2>
+                <p class="whitespace-pre-line break-words">{item.description}</p>
+                {item.evidence_snapshot && <details class="mt-3">
+                  <summary class="cursor-pointer font-semibold">{t('safetyQueue.evidence')}</summary>
+                  <pre class="mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-all text-sm">{JSON.stringify(item.evidence_snapshot,null,2)}</pre>
+                </details>}
+                {filters.closed ? <p class="mt-3 text-sm">{item.resolution}</p> : (
+                  <form method="post" class="mt-4">
+                    <input type="hidden" name="id" value={item.id} />
+                    <input type="hidden" name="expected" value={item.status} />
+                    <label class="block text-sm font-semibold">{t('safetyQueue.note')}
+                      <textarea class="mt-1 block w-full rounded-xl border border-[var(--ac-border)] p-2" name="note" maxlength="1000" rows="2"></textarea>
+                    </label>
+                    <div class="mt-3 flex flex-wrap gap-3">
+                      {item.status==='open' && <button class="workspace-secondary" name="decision" value="start">{t('safetyQueue.start')}</button>}
+                      <button class="workspace-button" name="decision" value="resolve">{t('safetyQueue.resolve')}</button>
+                      <button class="workspace-secondary" name="decision" value="dismiss">{t('safetyQueue.dismiss')}</button>
+                    </div>
+                    <details class="mt-3">
+                      <summary class="cursor-pointer font-semibold">{t('safetyQueue.sanction')}</summary>
+                      <div class="mt-2 flex flex-wrap items-center gap-3">
+                        <label class="text-sm font-semibold">{t('safetyQueue.sanctionLevel')}
+                          <select name="sanction" class="ml-2 min-h-11 rounded-xl border border-[var(--ac-border)] px-3">
+                            <option value="">{t('safetyReport.choose')}</option>
+                            {sanctionLevels.slice(1).map(level=><option value={level}>{t(`safetyQueue.level.${level as Exclude<typeof level,''>}`)}</option>)}
+                          </select>
+                        </label>
+                        <button class="workspace-secondary" name="decision" value="sanction">{t('safetyQueue.applySanction')}</button>
+                      </div>
+                    </details>
+                  </form>
+                )}
+              </li>
+            ))}
+          </ul>
+          <nav class="mt-3 flex gap-4" aria-label={t('safetyQueue.pagination')}>
+            {filters.offset>0 && <a class="workspace-link" href={href(filters.closed,Math.max(0,filters.offset-25))}>{t('safetyQueue.previous')}</a>}
+            {queue.length>25 && filters.offset<5000 && <a class="workspace-link" href={href(filters.closed,filters.offset+25)}>{t('safetyQueue.next')}</a>}
+          </nav>
+        </>
+      )}
+  </section>
+</BaseLayout>

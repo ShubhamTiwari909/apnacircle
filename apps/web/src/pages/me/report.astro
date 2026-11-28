@@ -1,0 +1,62 @@
+---
+import { getSecret } from 'astro:env/server';
+import { t } from '@apnacircle/i18n';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import { readConnectionForm } from '../../lib/connection-requests.js';
+import { PROFILE_AUTH_PATH, PROFILE_SESSION } from '../../lib/profile-editor.js';
+import { guestReportLimiter, reportCategories, reportForm, reportTarget, submitSafetyReport } from '../../lib/safety-reports.js';
+import { getClientIp, getRuntimePublicApiConfig } from '../../lib/server-config.js';
+import { verifyTurnstileToken } from '../../lib/turnstile.js';
+
+export const prerender = false;
+const token = Astro.cookies.get(PROFILE_SESSION)?.value;
+const config = getRuntimePublicApiConfig();
+const siteKey = import.meta.env.PUBLIC_TURNSTILE_SITE_KEY;
+const target = reportTarget.safeParse(Object.fromEntries(Astro.url.searchParams));
+const canReport = target.success && (Boolean(token) || target.data.kind==='meetup' && Boolean(siteKey));
+const signIn = PROFILE_AUTH_PATH + '?' + new URLSearchParams({ start:'1' });
+let error: 'invalid'|'unavailable'|'limit'|'verification'|'duplicate' | undefined;
+if (!target.success) Astro.response.status = 404;
+else if (Astro.request.method==='POST' && canReport && config) {
+  const body = await readConnectionForm(Astro.request,Astro.url.origin);
+  if (body instanceof Response) return body;
+  const values = reportForm.safeParse(Object.fromEntries(body));
+  const ip = getClientIp(Astro);
+  const guestKey = token ? undefined : getSecret('FEEDBACK_WRITE_KEY');
+  const challenge = body.get('cf-turnstile-response');
+  if (!values.success) error='invalid';
+  else if (!token && !guestReportLimiter.check(ip ?? 'unknown').allowed) error='limit';
+  else if (!token && (!guestKey || typeof challenge !== 'string' ||
+      !(await verifyTurnstileToken(challenge,getSecret('TURNSTILE_SECRET_KEY'),ip)).success)) error='verification';
+  else {
+    const result = await submitSafetyReport(config,target.data,values.data,token,guestKey);
+    if (result.ok) return Astro.redirect(Astro.url.pathname + '?' + new URLSearchParams({...target.data,sent:'1'}),303);
+    error='status' in result && result.status===409 ? 'duplicate' : 'unavailable';
+  }
+  Astro.response.status = error==='limit' ? 429 : error==='unavailable' ? 503 : 422;
+}
+const submitted = Astro.url.searchParams.get('sent')==='1' && Astro.request.method==='GET';
+---
+<BaseLayout title={t('safetyReport.title')} noindex>
+  <section class="mx-auto max-w-2xl">
+    <a class="workspace-link" href="/safety">{t('meetups.detail.safetyLink')}</a>
+    <h1 class="text-3xl font-bold tracking-tight">{t('safetyReport.title')}</h1>
+    <p class="mt-2 text-[var(--ac-ink-muted)]">{t('safetyReport.intro')}</p>
+    {submitted ? <p class="mt-5 font-semibold" role="status">{t('safetyReport.sent')}</p>
+      : !target.success ? <p class="mt-5" role="alert">{t('safetyReport.unavailable')}</p>
+      : !canReport ? <a class="workspace-button mt-5" href={signIn}>{t('profile.signIn')}</a>
+      : <>
+          {error && <p class="mt-4 text-[var(--ac-danger)]" role="alert">{t(`safetyReport.${error}`)}</p>}
+          <form method="post" class="workspace-form mt-5">
+            <label>{t('feedback.categoryLabel')}<select name="category" required>
+              <option value="">{t('safetyReport.choose')}</option>
+              {reportCategories.map(category=><option value={category}>{t(`safetyReport.category.${category}`)}</option>)}
+            </select></label>
+            <label>{t('feedback.descriptionLabel')}<textarea name="description" rows="5" minlength="15" maxlength="1000" required></textarea></label>
+            {!token && <div class="cf-turnstile" data-sitekey={siteKey}></div>}
+            <button class="workspace-button">{t('safetyReport.submit')}</button>
+          </form>
+          {!token && <script is:inline src="https://challenges.cloudflare.com/turnstile/v0/api.js" defer></script>}
+        </>}
+  </section>
+</BaseLayout>

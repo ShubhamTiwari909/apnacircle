@@ -1,6 +1,6 @@
 ---
 import { t } from '@apnacircle/i18n';
-import { ACTIVE_CITIES, CATEGORIES } from '@apnacircle/types';
+import HostMeetupForm from '../../../../components/HostMeetupForm.astro';
 import BaseLayout from '../../../../layouts/BaseLayout.astro';
 import { readConnectionForm } from '../../../../lib/connection-requests.js';
 import { createMeetup, getHostWorkspace, meetupForm } from '../../../../lib/hosting.js';
@@ -43,28 +43,8 @@ const value = (name: string) => String(form?.get(name) ?? '');
         <>
           <p class="mt-2 text-[var(--ac-ink-muted)]">{t(host.established ? 'host.establishedRule' : 'host.reviewRule')}</p>
           {error && <p role="alert" class="mt-4 text-sm font-semibold text-[var(--ac-danger)]">{t('host.meetupError')}</p>}
-          <form method="post" class="workspace-form mt-6">
-            <div class="grid gap-4 sm:grid-cols-2">
-              <label>{t('onboard.city')}<select name="city" required>{ACTIVE_CITIES.map((city) => <option value={city.slug} selected={value('city') === city.slug}>{city.name}</option>)}</select></label>
-              <label>{t('feedback.categoryLabel')}<select name="category" required>{CATEGORIES.filter(({kind}) => kind === 'activity').map((category) => <option value={category.slug} selected={value('category') === category.slug}>{category.name}</option>)}</select></label>
-            </div>
-            <label>{t('host.meetupTitle')}<input name="title" required minlength="5" maxlength="120" value={value('title')} /></label>
-            <label>{t('feedback.descriptionLabel')}<textarea name="description" rows="4" minlength="20" maxlength="4000" required>{value('description')}</textarea></label>
-            <div class="grid gap-4 sm:grid-cols-2">
-              <label>{t('host.venue')}<input name="venue" required minlength="3" maxlength="120" value={value('venue')} /></label>
-              <label>{t('host.locality')}<input name="locality" required minlength="2" maxlength="80" value={value('locality')} /></label>
-            </div>
-            <label>{t('host.spot')}<input name="spot" maxlength="300" value={value('spot')} /></label>
-            <div class="grid gap-4 sm:grid-cols-2">
-              <label>{t('host.start')}<input type="datetime-local" name="starts" required value={value('starts')} /></label>
-              <label>{t('host.end')}<input type="datetime-local" name="ends" required value={value('ends')} /></label>
-              <label>{t('host.capacity')}<input type="number" name="capacity" required min="2" max={host.established ? 50 : 15} value={value('capacity') || '10'} /></label>
-              <label>{t('host.joinMode')}<select name="joinMode"><option value="auto">{t('host.joinAuto')}</option><option value="approval" selected={value('joinMode') === 'approval'}>{t('host.joinApproval')}</option></select></label>
-            </div>
-            <label><input type="checkbox" name="womenOnly" checked={form?.has('womenOnly')} /> {t('meetups.womenOnlyBadge')}</label>
-            <label><input type="checkbox" name="publicVenue" required checked={form?.has('publicVenue')} /> {t('host.confirmPublic')}</label>
-            <button class="workspace-button">{t('host.submitMeetup')}</button>
-          </form>
+          <HostMeetupForm value={value} maxCapacity={host.established ? 50 : 15}
+            womenOnly={form?.has('womenOnly')} publicVenue={form?.has('publicVenue')} />
         </>
       )}
   </section>

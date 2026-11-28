@@ -1,0 +1,104 @@
+---
+import { t } from '@apnacircle/i18n';
+import { z } from 'zod';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import { authenticatedRequest } from '../../lib/connection-abuse.js';
+import { readConnectionForm } from '../../lib/connection-requests.js';
+import { formatMeetupWhen } from '../../lib/meetups.js';
+import { PROFILE_AUTH_PATH, PROFILE_SESSION, STAFF_AUTH_PATH } from '../../lib/profile-editor.js';
+import { getRuntimePublicApiConfig } from '../../lib/server-config.js';
+
+export const prerender=false;
+const path='/me/grievances';
+const staff=Astro.url.searchParams.get('queue')==='1';
+const offset=z.coerce.number().int().min(0).max(5000).catch(0).parse(Astro.url.searchParams.get('offset'));
+const token=Astro.cookies.get(PROFILE_SESSION)?.value;
+const config=getRuntimePublicApiConfig();
+const signIn=PROFILE_AUTH_PATH+'?'+new URLSearchParams({start:'1',returnTo:path});
+const categories=z.enum(['content_takedown','account_action','data_privacy','harassment','other']);
+const states=z.enum(['submitted','acknowledged','investigating','resolved','rejected','escalated']);
+const datetime=z.iso.datetime({offset:true});
+const items=z.array(z.object({ id:z.guid(), category:categories, status:states, subject:z.string(), description:z.string(),
+  created_at:datetime, sla_due_at:datetime, response:z.string().nullable() })).max(26);
+const pageHref=(page:number)=>path+'?'+new URLSearchParams({queue:'1',offset:String(page)});
+let error=false;
+if (Astro.request.method==='POST' && config && token) {
+  const body=await readConnectionForm(Astro.request,Astro.url.origin);
+  if (body instanceof Response) return body;
+  const fields=Object.fromEntries(body);
+  if (staff) {
+    const data=z.object({id:z.guid(),expected:states,action:states.exclude(['submitted']),response:z.string().trim().min(10).max(1500)}).safeParse(fields);
+    if (data.success) {
+      const result=await authenticatedRequest(config,token,'/rest/v1/rpc/respond_to_member_grievance',async()=>null,
+        {p_id:data.data.id,p_expected:data.data.expected,p_action:data.data.action,p_response:data.data.response});
+      if (result.ok) return Astro.redirect(pageHref(offset),303);
+      Astro.response.status=result.status;
+    } else Astro.response.status=422;
+  } else {
+    const data=z.object({category:categories,subject:z.string().trim().min(5).max(120),description:z.string().trim().min(20).max(2000)}).safeParse(fields);
+    if (data.success) {
+      const result=await authenticatedRequest(config,token,'/rest/v1/rpc/submit_member_grievance',
+        async response=>z.guid().parse(await response.json()),{p_category:data.data.category,p_subject:data.data.subject,p_description:data.data.description});
+      if (result.ok) return Astro.redirect(path+'?submitted=1',303);
+      Astro.response.status=result.status;
+    } else Astro.response.status=422;
+  }
+  error=true;
+}
+const result=config&&token?await authenticatedRequest(config,token,
+  '/rest/v1/rpc/'+(staff?'list_staff_grievances':'get_my_grievances'),
+  async response=>items.parse(await response.json()),staff?{p_offset:offset}:{}):null;
+const records=result?.ok?result.data:null;
+if (!error&&!records) Astro.response.status=!token?401:result?.ok===false?result.status:503;
+---
+<BaseLayout title={t(staff?'grievanceFlow.queue':'grievanceFlow.title')} noindex>
+  <section class="mx-auto max-w-2xl">
+    <a class="workspace-link" href={staff?'/me/moderation/safety':'/grievance'}>{t(staff?'safetyQueue.title':'footer.grievanceLink')}</a>
+    <h1 class="text-3xl font-bold tracking-tight">{t(staff?'grievanceFlow.queue':'grievanceFlow.title')}</h1>
+    {Astro.response.status===401 ? <a class="workspace-button mt-4" href={signIn}>{t('profile.signIn')}</a>
+      : Astro.response.status===428 ? <a class="workspace-link mt-4" href={STAFF_AUTH_PATH+'?'+new URLSearchParams({returnTo:'/me/grievances?queue=1'})}>{t('feedbackInbox.verify')}</a>
+      : !records ? <p role="alert" class="mt-4">{t('grievanceFlow.error')}</p>
+      : (
+        <>
+          {error && <p role="alert" class="mt-4 text-[var(--ac-danger)]">{t('grievanceFlow.error')}</p>}
+          {!staff && (
+            <form method="post" class="workspace-form mt-5">
+              <p>{t('grievanceFlow.intro')}</p>
+              {Astro.url.searchParams.has('submitted') && <p role="status">{t('grievanceFlow.submitted')}</p>}
+              <label>{t('feedback.categoryLabel')}<select name="category" required>
+                {categories.options.map(category=><option value={category}>{t(`grievanceFlow.category.${category}`)}</option>)}
+              </select></label>
+              <label>{t('feedback.subjectLabel')}<input name="subject" minlength="5" maxlength="120" required /></label>
+              <label>{t('feedback.descriptionLabel')}<textarea name="description" minlength="20" maxlength="2000" rows="5" required></textarea></label>
+              <button class="workspace-button">{t('grievanceFlow.submit')}</button>
+            </form>
+          )}
+          {!records.length && <p class="mt-5 text-[var(--ac-ink-muted)]">{t('grievanceFlow.empty')}</p>}
+          <ul class="mt-5 space-y-4">
+            {records.slice(0,25).map(record=>(
+              <li class="workspace-panel">
+                <p class="text-sm font-semibold">{t(`grievanceFlow.status.${record.status}`)}</p>
+                <h2 class="mt-1 break-words text-lg font-semibold">{record.subject}</h2>
+                <p class="mt-2 whitespace-pre-wrap break-words">{record.description}</p>
+                {staff ? <>
+                  <p class="mt-2 text-sm">{t('safetyQueue.due')} {formatMeetupWhen(record.sla_due_at,null)}</p>
+                  <form method="post" class="mt-4 space-y-3">
+                    <input type="hidden" name="id" value={record.id} /><input type="hidden" name="expected" value={record.status} />
+                    <label class="block text-sm font-semibold">{t('grievanceFlow.response')}<textarea name="response" rows="3" minlength="10" maxlength="1500" required class="mt-1 block w-full rounded-xl border border-[var(--ac-border)] p-2"></textarea></label>
+                    <label class="block text-sm font-semibold">{t('grievanceFlow.state')}<select name="action" class="ml-2 min-h-11 rounded-xl border border-[var(--ac-border)] px-3">
+                      {states.options.filter(state=>state!=='submitted').map(state=><option value={state}>{t(`grievanceFlow.status.${state}`)}</option>)}
+                    </select></label>
+                    <button class="workspace-button">{t('grievanceFlow.send')}</button>
+                  </form>
+                </> : record.response && <p class="mt-3 whitespace-pre-wrap break-words border-t border-[var(--ac-border)] pt-3">{record.response}</p>}
+              </li>
+            ))}
+          </ul>
+          {staff && <div class="flex gap-3">
+            {offset>0 && <a class="workspace-link" href={pageHref(Math.max(0,offset-25))}>{t('safetyQueue.previous')}</a>}
+            {records.length>25 && offset<5000 && <a class="workspace-link" href={pageHref(offset+25)}>{t('safetyQueue.next')}</a>}
+          </div>}
+        </>
+      )}
+  </section>
+</BaseLayout>

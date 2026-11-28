@@ -27,6 +27,9 @@ export function memberSignInReturnPath(value: string | null | undefined): string
   if (!value) return null;
   if (value.startsWith(`${CONNECTION_CONTACT_PATH}/`) && CONTACT_ID_PATTERN.test(value.slice(CONNECTION_CONTACT_PATH.length + 1))) return value;
   if (value.endsWith('/people') && /^\/[a-z0-9-]+\/people$/.test(value)) return value;
+  if (/^\/me\/meetups\/[a-z0-9-]{1,80}\/[a-z0-9-]{1,80}$/.test(value)) return value;
+  if (/^\/me\/host\/meetups\/[0-9a-f-]{36}$/.test(value)) return value;
+  if (value && ['/me/grievances', '/me/privacy', '/me/notifications', '/me/moderation/photos', '/me/moderation/safety'].includes(value)) return value;
   if (!value.startsWith('/u/')) return null;
   const id = value.slice(3);
   return isMemberProfileId(id) ? `/u/${id}` : null;

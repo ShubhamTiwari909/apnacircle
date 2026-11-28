@@ -50,10 +50,10 @@ const istDateTime = z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/).refine((
 export const meetupForm = z.object({
   city, category, title: field(5, 120), description: field(20, 4000),
   venue: field(3, 120), locality: field(2, 80), spot: optional(300),
-  starts: istDateTime, ends: istDateTime,
+  starts: istDateTime, ends: z.union([istDateTime, z.literal('').transform(() => null)]),
   capacity: z.coerce.number().int().min(2).max(50),
   womenOnly: z.boolean(), joinMode: z.enum(['auto', 'approval']), publicVenue: z.literal(true),
-}).refine(({ starts, ends }) => Date.parse(ends) > Date.parse(starts));
+}).refine(({ starts, ends }) => ends === null || Date.parse(ends) > Date.parse(starts));
 
 const workspace = z.object({
   host_status: hostStatus.nullable(),
@@ -112,12 +112,36 @@ export function applyToHost(config: PublicApiConfig, token: string, input: z.out
   });
 }
 
-export function createMeetup(config: PublicApiConfig, token: string, input: z.output<typeof meetupForm>) {
-  return rpc(config, token, 'create_and_submit_meetup', createdMeetup, {
-    p_city_slug: input.city, p_category_slug: input.category, p_title: input.title, p_description: input.description,
+function meetupFields(input: z.output<typeof meetupForm>) {
+  return { p_category_slug: input.category, p_title: input.title, p_description: input.description,
     p_venue_name: input.venue, p_locality: input.locality, p_spot_note: input.spot || null,
     p_starts_at: input.starts, p_ends_at: input.ends, p_capacity: input.capacity, p_women_only: input.womenOnly,
     p_join_mode: input.joinMode, p_venue_confirmed_public: input.publicVenue,
+  };
+}
+
+export function createMeetup(config: PublicApiConfig, token: string, input: z.output<typeof meetupForm>) {
+  return rpc(config, token, 'create_and_submit_meetup', createdMeetup, { p_city_slug: input.city, ...meetupFields(input) });
+}
+
+const hostMeetupEditor = z.object({
+  city: z.string(), category: z.string(), title: z.string(), description: z.string(),
+  venue: z.string(), locality: z.string(), spot: z.string(), starts: iso, ends: iso.nullable(),
+  capacity: z.number().int(), joinMode: z.enum(['auto', 'approval']), womenOnly: z.boolean(),
+  publicVenue: z.boolean(), editable: z.boolean(), updatedAt: iso,
+});
+
+export function hostMeetupEditorPath(id: string) {
+  return '/me/host/meetups/' + id;
+}
+
+export function getHostMeetupEditor(config: PublicApiConfig, token: string, id: string) {
+  return rpc(config, token, 'get_host_meetup_editor', hostMeetupEditor, { p_meetup_id: id });
+}
+
+export function saveHostMeetup(config: PublicApiConfig, token: string, id: string, expected: string, input: z.output<typeof meetupForm>) {
+  return rpc(config, token, 'save_host_meetup', statuses, {
+    p_meetup_id: id, p_expected_at: expected, ...meetupFields(input),
   });
 }
 

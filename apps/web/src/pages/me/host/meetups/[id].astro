@@ -1,0 +1,59 @@
+---
+import { t } from '@apnacircle/i18n';
+import { z } from 'zod';
+import HostMeetupForm from '../../../../components/HostMeetupForm.astro';
+import BaseLayout from '../../../../layouts/BaseLayout.astro';
+import { readConnectionForm } from '../../../../lib/connection-requests.js';
+import { getHostMeetupEditor, hostMeetupEditorPath, meetupForm, saveHostMeetup } from '../../../../lib/hosting.js';
+import { HOST_PATH, PROFILE_AUTH_PATH, PROFILE_SESSION } from '../../../../lib/profile-editor.js';
+import { getRuntimePublicApiConfig } from '../../../../lib/server-config.js';
+
+export const prerender = false;
+const id = z.guid().safeParse(Astro.params.id);
+if (!id.success) return Astro.rewrite('/404');
+const token = Astro.cookies.get(PROFILE_SESSION)?.value;
+const config = getRuntimePublicApiConfig();
+const result = config && token ? await getHostMeetupEditor(config, token, id.data) : null;
+const event = result?.ok ? result.data : null;
+const needsSignIn = !token || (result?.ok === false && result.status === 401);
+const signIn = PROFILE_AUTH_PATH + '?' + new URLSearchParams({ start: '1', returnTo: hostMeetupEditorPath(id.data) });
+let form: FormData | undefined;
+let error = false;
+if (Astro.request.method === 'POST' && config && token && event?.editable) {
+  const body = await readConnectionForm(Astro.request, Astro.url.origin);
+  if (body instanceof Response) return body;
+  form = body;
+  const expected = z.iso.datetime({ offset: true }).safeParse(form.get('updatedAt'));
+  const parsed = meetupForm.safeParse({
+    ...Object.fromEntries(form), city: event.city, publicVenue: form.has('publicVenue'), womenOnly: form.has('womenOnly'),
+  });
+  if (expected.success && parsed.success) {
+    const response = await saveHostMeetup(config, token, id.data, expected.data, parsed.data);
+    if (response.ok) return Astro.redirect(HOST_PATH, 303);
+    Astro.response.status = response.status;
+  } else Astro.response.status = 422;
+  error = true;
+} else if (!event?.editable) Astro.response.status = needsSignIn ? 401 : result && !result.ok ? result.status : 409;
+
+const inIndia = (value: string) => new Date(Date.parse(value) + 19_800_000).toISOString().slice(0, 16);
+const initial: Record<string, unknown> = event ? {
+  ...event, starts: inIndia(event.starts), ends: event.ends ? inIndia(event.ends) : '',
+} : {};
+const value = (name: string) => String(form ? form.get(name) ?? '' : initial[name] ?? '');
+---
+
+<BaseLayout title={t('host.editMeetup')} noindex>
+  <section class="mx-auto max-w-2xl">
+    <a class="workspace-link" href={HOST_PATH}>{t('host.title')}</a>
+    <h1 class="text-3xl font-bold tracking-tight">{t('host.editMeetup')}</h1>
+    {needsSignIn ? <a class="workspace-button mt-5" href={signIn}>{t('profile.signIn')}</a>
+      : !event?.editable ? <p class="mt-4">{t('host.editUnavailable')}</p>
+      : (
+        <>
+          {error && <p role="alert" class="mt-4 text-sm font-semibold text-[var(--ac-danger)]">{t(Astro.response.status === 409 ? 'host.editConflict' : 'host.meetupError')}</p>}
+          {Astro.response.status !== 409 && <HostMeetupForm value={value} maxCapacity={50} expected={event.updatedAt}
+            womenOnly={form ? form.has('womenOnly') : event.womenOnly} publicVenue={form ? form.has('publicVenue') : event.publicVenue} />}
+        </>
+      )}
+  </section>
+</BaseLayout>
