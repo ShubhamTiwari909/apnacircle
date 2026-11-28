@@ -1,0 +1,42 @@
+---
+import { render } from 'astro:content';
+import { t } from '@apnacircle/i18n';
+import { getCategoryBySlug, getCityBySlug } from '@apnacircle/types';
+import BaseLayout from '../../../layouts/BaseLayout.astro';
+import { publishedPlaces } from '../../../lib/editorial.js';
+
+export async function getStaticPaths() {
+  return (await publishedPlaces()).map((place) => ({
+    params: { city: place.data.citySlug, slug: place.id },
+    props: { place },
+  }));
+}
+
+const { place } = Astro.props;
+const { name, summary, citySlug, categorySlug, locality, bestTimeNote, publicAccessNote, lastVerifiedAt } = place.data;
+const city = getCityBySlug(citySlug);
+const category = getCategoryBySlug(categorySlug);
+const { Content } = await render(place);
+---
+
+<BaseLayout
+  title={t('seo.placeTitle', { name, city: city?.name ?? citySlug })}
+  description={summary}
+  activeCitySlug={citySlug}
+  breadcrumbs={[{ label: t('nav.cities'), path: '/cities' }, { label: city?.name ?? citySlug, path: `/${citySlug}` }, { label: t('nav.places'), path: `/${citySlug}/places` }, { label: name }]}
+>
+  <article class="mx-auto max-w-3xl rounded-3xl border border-[var(--ac-border)] bg-[var(--ac-surface)] p-6 shadow-[var(--ac-shadow-card)] sm:p-10">
+    <header class="border-b border-[var(--ac-border)] pb-6">
+      <a href={`/${citySlug}/${categorySlug}`} class="text-sm font-semibold underline underline-offset-4">{category?.name ?? categorySlug}</a>
+      <h1 class="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">{name}</h1>
+      <p class="mt-2 text-sm text-[var(--ac-ink-muted)]">{locality} · {city?.name ?? citySlug}</p>
+      <p class="mt-4 leading-relaxed text-[var(--ac-ink-muted)]">{summary}</p>
+    </header>
+    <div class="article-body mt-6 text-sm leading-relaxed sm:text-base"><Content /></div>
+    <dl class="mt-6 grid gap-3 border-t border-[var(--ac-border)] pt-4 text-sm">
+      <div><dt class="font-semibold">{t('seo.placeAccess')}</dt><dd>{publicAccessNote}</dd></div>
+      {bestTimeNote && <div><dt class="font-semibold">{t('seo.placeWhen')}</dt><dd>{bestTimeNote}</dd></div>}
+      <div><dt class="font-semibold">{t('seo.placeVerified')}</dt><dd><time datetime={lastVerifiedAt}>{lastVerifiedAt}</time></dd></div>
+    </dl>
+  </article>
+</BaseLayout>

@@ -1,14 +1,15 @@
 ---
-import { getCollection } from 'astro:content';
 import BaseLayout from '../layouts/BaseLayout.astro';
+import { placePath, publishedPlaces } from '../lib/editorial.js';
 import { t } from '@apnacircle/i18n';
-import { getCategoryBySlug } from '@apnacircle/types';
+import { ACTIVE_CITIES, getCategoryBySlug } from '@apnacircle/types';
 import { PlaceCard } from '@apnacircle/ui';
 
-const places = await getCollection('places', ({ data }) => data.status === 'published');
+const places = await publishedPlaces();
+const canonical = ACTIVE_CITIES.length === 1 && ACTIVE_CITIES[0] ? `/${ACTIVE_CITIES[0].slug}/places` : '/places';
 ---
 
-<BaseLayout title={t('places.pageTitle')} description={t('places.pageLead')}>
+<BaseLayout title={t('places.pageTitle')} description={t('places.pageLead')} canonicalPath={canonical} noindex={!places.length}>
   <header class="max-w-3xl">
     <h1 class="text-3xl font-bold tracking-tight text-[var(--ac-ink)] sm:text-4xl">
       {t('places.pageTitle')}
@@ -28,7 +29,7 @@ const places = await getCollection('places', ({ data }) => data.status === 'publ
             summary={place.data.summary}
             publicAccessNote={place.data.publicAccessNote}
             lastVerifiedAt={t('article.verifiedOn', { date: place.data.lastVerifiedAt })}
-            href={`/${place.data.citySlug}/${place.data.categorySlug}`}
+            href={placePath(place.data.citySlug, place.id)}
           />
         );
       })

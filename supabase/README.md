@@ -34,6 +34,18 @@ yet because the runner image does not ship pgtap.
 - Staff roles are set only in SQL (`app_metadata.role`) and require an MFA (`aal2`) session. See `docs/host-kit/01-recruitment-and-vetting-playbook.md`.
 - Create staging and production projects in the Mumbai (`ap-south-1`) region.
 
+## Website feedback
+
+Apply migration `024_feedback_inbox.sql`. Generate a separate writer key for each environment with `openssl rand -hex 32` and configure it as the web server secret `FEEDBACK_WRITE_KEY`. Store its SHA-256 digest in the corresponding database using an administrative connection.
+
+```sql
+insert into app_private.feedback_ingest_config (key_hash)
+values (decode('<64 lowercase hex characters of the SHA-256 digest>', 'hex'))
+on conflict (singleton) do update set key_hash = excluded.key_hash;
+```
+
+Hash the key without a trailing newline. The inbox is at `/me/moderation/feedback` and uses the active staff role and authenticator checks from the connection-abuse dashboard.
+
 ## Outbox worker configuration
 `outbox-worker` returns **503 without claiming anything** unless every one of these is set: `CRON_SECRET`,
 `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `RESEND_API_KEY`, `FROM_EMAIL`, `VAPID_PUBLIC_KEY`,

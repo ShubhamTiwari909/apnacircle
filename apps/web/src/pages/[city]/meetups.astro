@@ -1,10 +1,10 @@
 ---
-import { env } from 'cloudflare:workers';
+import { getRuntimePublicApiConfig } from '../../lib/server-config.js';
 import BaseLayout from '../../layouts/BaseLayout.astro';
 import MeetupListing from '../../components/MeetupListing.astro';
 import { t } from '@apnacircle/i18n';
 import { ACTIVE_CITIES, CATEGORIES } from '@apnacircle/types';
-import { getPublicApiConfig, listPublicMeetups, parseListingQuery } from '../../lib/meetups.js';
+import { hasMeetupSearchParams, listPublicMeetups, parseListingQuery } from '../../lib/meetups.js';
 
 // Dynamic (plan 7.5): rendered per request, shared-cache for 60 seconds.
 export const prerender = false;
@@ -20,10 +20,7 @@ const query = parseListingQuery(
   cityMeta.slug,
   CATEGORIES.map((c) => c.slug),
 );
-const config = getPublicApiConfig({
-  PUBLIC_SUPABASE_URL: env.PUBLIC_SUPABASE_URL ?? import.meta.env.PUBLIC_SUPABASE_URL,
-  PUBLIC_SUPABASE_ANON_KEY: env.PUBLIC_SUPABASE_ANON_KEY ?? import.meta.env.PUBLIC_SUPABASE_ANON_KEY,
-});
+const config = getRuntimePublicApiConfig();
 const result = config ? await listPublicMeetups(config, query) : ({ ok: false } as const);
 
 // Never cache or index an outage: 503 + no-store. Healthy pages are shared-cached for 60 seconds (plan 7.5).
@@ -43,24 +40,17 @@ if (query.when !== 'any') nextParams.set('when', query.when);
 if (nextCursor) nextParams.set('after', nextCursor);
 const nextHref = nextCursor ? `${basePath}?${nextParams.toString()}` : null;
 // Filter and paging variants are not indexable (plan 10): only the plain city path is canonical.
-const noindex = isFiltered || query.cursor !== null;
+const noindex = !result.ok || hasMeetupSearchParams(Astro.url.searchParams);
 ---
 
 <BaseLayout
   title={t('meetups.cityTitle', { city: cityMeta.name })}
-  description={t('meetups.pageLead')}
+  description={t('seo.cityMeetupsDescription', { city: cityMeta.name })}
   activeCitySlug={cityMeta.slug}
+  breadcrumbs={[{ label: t('nav.cities'), path: '/cities' }, { label: cityMeta.name, path: `/${cityMeta.slug}` }, { label: t('nav.meetups') }]}
   canonicalPath={basePath}
   noindex={noindex}
 >
-  <nav aria-label="Breadcrumb" class="mb-4 text-xs text-[var(--ac-ink-muted)]">
-    <a href="/cities" class="hover:text-[var(--ac-accent)]">{t('city.breadcrumbCities')}</a>
-    <span aria-hidden="true" class="mx-1.5">/</span>
-    <a href={`/${cityMeta.slug}`} class="hover:text-[var(--ac-accent)]">{cityMeta.name}</a>
-    <span aria-hidden="true" class="mx-1.5">/</span>
-    <span class="font-medium text-[var(--ac-ink)]">{t('nav.meetups')}</span>
-  </nav>
-
   <header class="max-w-3xl">
     <div class="flex flex-wrap gap-2">
       <span class="rounded-full bg-[var(--ac-accent-soft)] px-3 py-1 text-xs font-semibold text-[var(--ac-accent)]">

@@ -1,9 +1,9 @@
 ---
-import { env } from 'cloudflare:workers';
+import { getClientIp, getRuntimePublicApiConfig } from '../../lib/server-config.js';
 import { t } from '@apnacircle/i18n';
 import BaseLayout from '../../layouts/BaseLayout.astro';
 import { blockConnectionMember, CONNECTION_REQUESTS_PATH, readConnectionForm, sendProfileConnectionRequest } from '../../lib/connection-requests.js';
-import { formatMeetupWhen, getPublicApiConfig } from '../../lib/meetups.js';
+import { formatMeetupWhen } from '../../lib/meetups.js';
 import { getMemberProfile, profileReadIpLimiter } from '../../lib/member-profile.js';
 import { isMemberProfileId, PROFILE_AUTH_PATH, PROFILE_SESSION } from '../../lib/profile-editor.js';
 import { fetchSignedProfilePhotoUrls, PROFILE_MEDIA_PATH } from '../../lib/profile-photo-links.js';
@@ -12,11 +12,7 @@ export const prerender = false;
 
 const id = Astro.params.id ?? '';
 const token = Astro.cookies.get(PROFILE_SESSION)?.value;
-const config = getPublicApiConfig({
-  PUBLIC_SUPABASE_URL: env.PUBLIC_SUPABASE_URL ?? import.meta.env.PUBLIC_SUPABASE_URL,
-  PUBLIC_SUPABASE_ANON_KEY:
-    env.PUBLIC_SUPABASE_ANON_KEY ?? import.meta.env.PUBLIC_SUPABASE_ANON_KEY,
-});
+const config = getRuntimePublicApiConfig();
 
 let requestError: Extract<Awaited<ReturnType<typeof sendProfileConnectionRequest>>, { ok: false }> | undefined;
 if (Astro.request.method === 'POST') {
@@ -46,7 +42,7 @@ if (!isMemberProfileId(id)) {
 } else if (!config) {
   result = { ok: false, reason: 'unavailable' };
 } else {
-  const ip = Astro.request.headers.get('CF-Connecting-IP');
+  const ip = getClientIp(Astro);
   const limit = ip ? profileReadIpLimiter.check(ip) : null;
   if (limit && !limit.allowed) {
     Astro.response.headers.set('Retry-After', String(limit.retryAfterSeconds));

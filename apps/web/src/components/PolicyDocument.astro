@@ -29,7 +29,7 @@ const versionLabel = placeholders.version || '1.0';
 const effectiveDateLabel = placeholders.effective_date || 'Pending counsel sign-off';
 ---
 
-<BaseLayout title={pageTitle} description={description}>
+<BaseLayout title={pageTitle} description={description} noindex={true}>
   <div class="mx-auto max-w-3xl">
     {
       hasUnfilledPlaceholders ? (

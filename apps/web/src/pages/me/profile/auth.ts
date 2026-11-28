@@ -1,9 +1,7 @@
 import type { APIRoute } from 'astro';
-import { env } from 'cloudflare:workers';
-import { getPublicApiConfig } from '../../../lib/meetups.js';
+import { getRuntimePublicApiConfig } from '../../../lib/server-config.js';
 import {
   exchangeProfileCode,
-  getProfileEditor,
   LEGACY_PROFILE_SESSION,
   memberSignInReturnPath,
   profileCookieOptions,
@@ -19,11 +17,7 @@ import {
 export const prerender = false;
 
 export const GET: APIRoute = async ({ request, url, cookies, redirect }) => {
-  const config = getPublicApiConfig({
-    PUBLIC_SUPABASE_URL: env.PUBLIC_SUPABASE_URL ?? import.meta.env.PUBLIC_SUPABASE_URL,
-    PUBLIC_SUPABASE_ANON_KEY:
-      env.PUBLIC_SUPABASE_ANON_KEY ?? import.meta.env.PUBLIC_SUPABASE_ANON_KEY,
-  });
+  const config = getRuntimePublicApiConfig();
   if (!config) return redirect(PROFILE_PATH, 303);
 
   const verifierOptions = profileCookieOptions(url, PROFILE_AUTH_PATH);
@@ -46,13 +40,7 @@ export const GET: APIRoute = async ({ request, url, cookies, redirect }) => {
   const session = code && verifier ? await exchangeProfileCode(config, code, verifier) : null;
   if (!session) return redirect(`${returnTo ?? PROFILE_PATH}?signin=failed`, 303);
 
-  // Supabase Auth can have identities that have yet to complete ApnaCircle onboarding.
-  const profile = await getProfileEditor(config, session.access_token);
-  if (!profile.ok) {
-    const outcome = profile.reason === 'membership' ? 'membership' : 'failed';
-    return redirect(`${returnTo ?? PROFILE_PATH}?signin=${outcome}`, 303);
-  }
-
+  // The session proves identity. Member routes separately enforce onboarding and access rules.
   cookies.delete(LEGACY_PROFILE_SESSION, profileCookieOptions(url, PROFILE_PATH));
   cookies.set(PROFILE_SESSION, session.access_token, {
     ...profileCookieOptions(url, PROFILE_SESSION_PATH),

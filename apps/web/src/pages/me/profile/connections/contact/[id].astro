@@ -1,12 +1,11 @@
 ---
-import { env } from 'cloudflare:workers';
+import { getRuntimePublicApiConfig } from '../../../../../lib/server-config.js';
 import { t } from '@apnacircle/i18n';
 import BaseLayout from '../../../../../layouts/BaseLayout.astro';
 import {
   CONNECTION_REQUESTS_PATH, CONTACT_KINDS, CONTACT_NOTICE_VERSION, getConnectionContacts,
   parseContactAction, readConnectionForm, updateConnectionContact,
 } from '../../../../../lib/connection-requests.js';
-import { getPublicApiConfig } from '../../../../../lib/meetups.js';
 import { CONNECTION_CONTACT_PATH, CONTACT_ID_PATTERN, PROFILE_AUTH_PATH, PROFILE_SESSION } from '../../../../../lib/profile-editor.js';
 
 export const prerender = false;
@@ -15,10 +14,7 @@ const contactId = Astro.params.id ?? '';
 if (!CONTACT_ID_PATTERN.test(contactId)) return Astro.rewrite('/404');
 const pagePath = `${CONNECTION_CONTACT_PATH}/${contactId}`;
 const token = Astro.cookies.get(PROFILE_SESSION)?.value;
-const config = getPublicApiConfig({
-  PUBLIC_SUPABASE_URL: env.PUBLIC_SUPABASE_URL ?? import.meta.env.PUBLIC_SUPABASE_URL,
-  PUBLIC_SUPABASE_ANON_KEY: env.PUBLIC_SUPABASE_ANON_KEY ?? import.meta.env.PUBLIC_SUPABASE_ANON_KEY,
-});
+const config = getRuntimePublicApiConfig();
 
 let actionError: 'invalid' | 'failed' | undefined;
 if (Astro.request.method === 'POST') {

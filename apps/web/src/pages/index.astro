@@ -1,13 +1,11 @@
 ---
-import { getCollection } from 'astro:content';
 import BaseLayout from '../layouts/BaseLayout.astro';
+import { placePath, publishedPlaces } from '../lib/editorial.js';
 import { t } from '@apnacircle/i18n';
 import { CATEGORIES, getCategoryBySlug } from '@apnacircle/types';
 import { PlaceCard } from '@apnacircle/ui';
 
-const featuredPlaces = (
-  await getCollection('places', ({ data }) => data.status === 'published')
-).slice(0, 4);
+const featuredPlaces = (await publishedPlaces()).slice(0, 4);
 ---
 
 <BaseLayout title={t('brand.name')} description={t('brand.description')}>
@@ -93,7 +91,7 @@ const featuredPlaces = (
               summary={place.data.summary}
               publicAccessNote={place.data.publicAccessNote}
               lastVerifiedAt={t('article.verifiedOn', { date: place.data.lastVerifiedAt })}
-              href={`/${place.data.citySlug}/${place.data.categorySlug}`}
+              href={placePath(place.data.citySlug, place.id)}
             />
           );
         })

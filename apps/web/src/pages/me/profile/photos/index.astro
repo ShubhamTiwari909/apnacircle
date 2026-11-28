@@ -1,9 +1,8 @@
 ---
-import { env } from 'cloudflare:workers';
+import { getRuntimePublicApiConfig } from '../../../../lib/server-config.js';
 import { z } from 'zod';
 import { t } from '@apnacircle/i18n';
 import BaseLayout from '../../../../layouts/BaseLayout.astro';
-import { getPublicApiConfig } from '../../../../lib/meetups.js';
 import { LEGACY_PROFILE_SESSION, PROFILE_PATH, PROFILE_SESSION } from '../../../../lib/profile-editor.js';
 import { fetchSignedProfilePhotoUrls, PROFILE_MEDIA_PATH } from '../../../../lib/profile-photo-links.js';
 
@@ -12,11 +11,7 @@ export const prerender = false;
 const token = (Astro.cookies.get(PROFILE_SESSION) ?? Astro.cookies.get(LEGACY_PROFILE_SESSION))?.value;
 if (!token) return Astro.redirect(PROFILE_PATH, 303);
 
-const config = getPublicApiConfig({
-  PUBLIC_SUPABASE_URL: env.PUBLIC_SUPABASE_URL ?? import.meta.env.PUBLIC_SUPABASE_URL,
-  PUBLIC_SUPABASE_ANON_KEY:
-    env.PUBLIC_SUPABASE_ANON_KEY ?? import.meta.env.PUBLIC_SUPABASE_ANON_KEY,
-});
+const config = getRuntimePublicApiConfig();
 const photoSchema = z.object({
   id: z.guid(),
   sort_order: z.number().int(),

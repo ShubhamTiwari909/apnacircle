@@ -1,5 +1,5 @@
 ---
-import { env } from 'cloudflare:workers';
+import { getRuntimePublicApiConfig } from '../../../lib/server-config.js';
 import { t } from '@apnacircle/i18n';
 import BaseLayout from '../../../layouts/BaseLayout.astro';
 import {
@@ -7,9 +7,9 @@ import {
   reviewAbuseCase, reviewForm, verifyStaffAuthenticator,
 } from '../../../lib/connection-abuse.js';
 import { readConnectionForm } from '../../../lib/connection-requests.js';
-import { formatMeetupWhen, getPublicApiConfig } from '../../../lib/meetups.js';
+import { formatMeetupWhen } from '../../../lib/meetups.js';
 import {
-  CONNECTION_ABUSE_PATH, profileCookieOptions, PROFILE_AUTH_PATH, PROFILE_SESSION, PROFILE_SESSION_PATH,
+  CONNECTION_ABUSE_PATH, FEEDBACK_INBOX_PATH, profileCookieOptions, PROFILE_AUTH_PATH, PROFILE_SESSION, PROFILE_SESSION_PATH,
 } from '../../../lib/profile-editor.js';
 
 export const prerender = false;
@@ -32,10 +32,7 @@ function href(options: { after?: string | undefined; caseId?: string | undefined
   return params.size ? `${CONNECTION_ABUSE_PATH}?${params}` : CONNECTION_ABUSE_PATH;
 }
 
-const config = getPublicApiConfig({
-  PUBLIC_SUPABASE_URL: env.PUBLIC_SUPABASE_URL ?? import.meta.env.PUBLIC_SUPABASE_URL,
-  PUBLIC_SUPABASE_ANON_KEY: env.PUBLIC_SUPABASE_ANON_KEY ?? import.meta.env.PUBLIC_SUPABASE_ANON_KEY,
-});
+const config = getRuntimePublicApiConfig();
 const token = Astro.cookies.get(PROFILE_SESSION)?.value;
 let postError: 'invalid' | 'changed' | 'failed' | 'mfa' | undefined;
 if (Astro.request.method === 'POST') {
@@ -104,6 +101,7 @@ function decisionLabel(decision: string, source: string) {
   <section class="mx-auto max-w-4xl">
     {caseId && <a class="inline-flex min-h-11 items-center text-sm font-semibold underline underline-offset-4" href={href({ after })}>{t('abuse.back')}</a>}
     <h1 class="text-3xl font-bold tracking-tight sm:text-4xl">{t('abuse.title')}</h1>
+    {result?.ok && <a href={FEEDBACK_INBOX_PATH} class="mt-2 inline-flex min-h-11 items-center text-sm font-semibold underline underline-offset-4">{t('feedbackInbox.title')}</a>}
 
     {postError && !(forbidden && postError !== 'mfa') && (
       <p role="alert" class="mt-4 text-sm font-semibold">{t(`abuse.error.${postError}`)}</p>

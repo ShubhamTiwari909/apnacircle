@@ -1,0 +1,11 @@
+.env
+.env.*
+**/.env
+**/.env.*
+.dev.vars
+.dev.vars.*
+**/.dev.vars
+**/.dev.vars.*
+.impeccable/hook.cache.json
+supabase/.temp/
+supabase/.branches/

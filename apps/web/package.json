@@ -15,6 +15,7 @@
     "@apnacircle/ui": "workspace:*",
     "@astrojs/cloudflare": "^14.4.9",
     "@astrojs/react": "^7.1.9",
+    "@astrojs/vercel": "^11.0.22",
     "@tailwindcss/vite": "^4.0.14",
     "@zentauri-ui/zentauri-components": "^2.18.0",
     "astro": "^7.4.13",

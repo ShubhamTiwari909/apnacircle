@@ -1,5 +1,5 @@
 ---
-import { env } from 'cloudflare:workers';
+import { getRuntimePublicApiConfig } from '../../../../lib/server-config.js';
 import { t } from '@apnacircle/i18n';
 import BaseLayout from '../../../../layouts/BaseLayout.astro';
 import {
@@ -12,16 +12,12 @@ import {
   saveRequestPreferences,
   type RequestPreferences,
 } from '../../../../lib/connection-requests.js';
-import { getPublicApiConfig } from '../../../../lib/meetups.js';
 import { PROFILE_AUTH_PATH, PROFILE_SESSION } from '../../../../lib/profile-editor.js';
 
 export const prerender = false;
 
 const token = Astro.cookies.get(PROFILE_SESSION)?.value;
-const config = getPublicApiConfig({
-  PUBLIC_SUPABASE_URL: env.PUBLIC_SUPABASE_URL ?? import.meta.env.PUBLIC_SUPABASE_URL,
-  PUBLIC_SUPABASE_ANON_KEY: env.PUBLIC_SUPABASE_ANON_KEY ?? import.meta.env.PUBLIC_SUPABASE_ANON_KEY,
-});
+const config = getRuntimePublicApiConfig();
 let submitted: RequestPreferences | undefined;
 let saveError = false;
 let invalid = false;

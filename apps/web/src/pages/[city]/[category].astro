@@ -1,6 +1,7 @@
 ---
-import { getCollection } from 'astro:content';
+import { getCollection, render } from 'astro:content';
 import BaseLayout from '../../layouts/BaseLayout.astro';
+import { placePath, publishedPlaces } from '../../lib/editorial.js';
 import { t } from '@apnacircle/i18n';
 import { ACTIVE_CITIES, CATEGORIES, getCategoryBySlug } from '@apnacircle/types';
 import { EmptyStateCard, PlaceCard } from '@apnacircle/ui';
@@ -24,14 +25,9 @@ const categoryDocs = await getCollection(
     data.slug === categoryMeta.slug,
 );
 const categoryDoc = categoryDocs[0];
+const Content = categoryDoc ? (await render(categoryDoc)).Content : null;
 
-const places = await getCollection(
-  'places',
-  ({ data }) =>
-    data.status === 'published' &&
-    data.citySlug === cityMeta.slug &&
-    data.categorySlug === categoryMeta.slug,
-);
+const places = (await publishedPlaces(cityMeta.slug)).filter(({ data }) => data.categorySlug === categoryMeta.slug);
 
 const pageTitle = categoryDoc?.data.title ?? `${categoryMeta.name} in ${cityMeta.name}`;
 const pageDescription =
@@ -39,21 +35,21 @@ const pageDescription =
   `Curated ${categoryMeta.name.toLowerCase()} in ${cityMeta.name}, verified before publication.`;
 ---
 
-<BaseLayout title={pageTitle} description={pageDescription} activeCitySlug={cityMeta.slug}>
-  <nav aria-label="Breadcrumb" class="mb-4 text-xs text-[var(--ac-ink-muted)]">
-    <a href="/cities" class="hover:text-[var(--ac-accent)]">{t('city.breadcrumbCities')}</a>
-    <span aria-hidden="true" class="mx-1.5">/</span>
-    <a href={`/${cityMeta.slug}`} class="hover:text-[var(--ac-accent)]">{cityMeta.name}</a>
-    <span aria-hidden="true" class="mx-1.5">/</span>
-    <span class="font-medium text-[var(--ac-ink)]">{categoryMeta.name}</span>
-  </nav>
-
+<BaseLayout
+  title={pageTitle}
+  description={pageDescription}
+  activeCitySlug={cityMeta.slug}
+  noindex={!categoryDoc && !places.length}
+  breadcrumbs={[{ label: t('nav.cities'), path: '/cities' }, { label: cityMeta.name, path: `/${cityMeta.slug}` }, { label: categoryMeta.name }]}
+>
   <header class="max-w-3xl">
     <h1 class="text-3xl font-bold tracking-tight text-[var(--ac-ink)] sm:text-4xl">
       {pageTitle}
     </h1>
     <p class="mt-3 text-base text-[var(--ac-ink-muted)]">{pageDescription}</p>
   </header>
+
+  {Content && <div class="article-body mt-5 max-w-3xl text-sm leading-relaxed"><Content /></div>}
 
   <section class="mt-8">
     {
@@ -69,6 +65,7 @@ const pageDescription =
                 summary={place.data.summary}
                 publicAccessNote={place.data.publicAccessNote}
                 lastVerifiedAt={t('article.verifiedOn', { date: place.data.lastVerifiedAt })}
+                href={placePath(cityMeta.slug, place.id)}
               />
             );
           })}

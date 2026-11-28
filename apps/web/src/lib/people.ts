@@ -28,20 +28,25 @@ export async function getPeoplePage(
   token?: string,
   fetchFn: FetchLike = fetch,
 ) {
+  let signedIn = Boolean(token);
   const fetchForViewer: FetchLike = token
     ? async (url, init) => {
         const headers = new Headers(init?.headers);
         headers.set('Authorization', `Bearer ${token}`);
         const response = await fetchFn(url, { ...init, headers });
-        if (response.status === 401) return fetchFn(url, init);
+        if (response.status === 401) {
+          signedIn = false;
+          return fetchFn(url, init);
+        }
         return response;
       }
     : fetchFn;
-  return callPublicRpc(
+  const result = await callPublicRpc(
     config,
     'get_city_people_page',
     { p_city_slug: citySlug },
     peoplePageSchema,
     fetchForViewer,
   );
+  return { ...result, signedIn };
 }

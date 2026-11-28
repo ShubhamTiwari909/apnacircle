@@ -1,6 +1,5 @@
 import type { APIRoute } from 'astro';
-import { env } from 'cloudflare:workers';
-import { getPublicApiConfig } from '../../../../lib/meetups.js';
+import { getRuntimePublicApiConfig } from '../../../../lib/server-config.js';
 import { isAllowedOrigin } from '../../../../lib/origin.js';
 import { LEGACY_PROFILE_SESSION, PROFILE_SESSION } from '../../../../lib/profile-editor.js';
 
@@ -13,11 +12,7 @@ const handler: APIRoute = async ({ request, url, cookies }) => {
   const token = (cookies.get(PROFILE_SESSION) ?? cookies.get(LEGACY_PROFILE_SESSION))?.value;
   if (!token) return new Response(null, { status: 401 });
 
-  const config = getPublicApiConfig({
-    PUBLIC_SUPABASE_URL: env.PUBLIC_SUPABASE_URL ?? import.meta.env.PUBLIC_SUPABASE_URL,
-    PUBLIC_SUPABASE_ANON_KEY:
-      env.PUBLIC_SUPABASE_ANON_KEY ?? import.meta.env.PUBLIC_SUPABASE_ANON_KEY,
-  });
+  const config = getRuntimePublicApiConfig();
   if (!config) return new Response(null, { status: 503 });
 
   // Only the staff API may request a moderation image.

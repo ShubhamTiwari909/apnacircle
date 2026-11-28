@@ -1,6 +1,7 @@
 import type { APIRoute } from 'astro';
 import { flattenError } from 'zod';
-import { feedbackSubmissionSchema } from '@apnacircle/types';
+import { feedbackSubmissionSchema, type FeedbackSubmission } from '@apnacircle/types';
+import { formatFeedbackReference, saveFeedback } from '../../lib/feedback.js';
 import { isAllowedOrigin } from '../../lib/origin.js';
 import { feedbackRateLimiter, SlidingWindowRateLimiter } from '../../lib/rate-limit.js';
 import { verifyTurnstileToken, type FetchLike } from '../../lib/turnstile.js';
@@ -11,7 +12,9 @@ export interface FeedbackHandlerDeps {
   limiter?: SlidingWindowRateLimiter;
   turnstileSecret?: string;
   siteUrl?: string;
+  clientIp?: string;
   fetchFn?: FetchLike;
+  save?: (submission: Omit<FeedbackSubmission, 'turnstileToken'>) => ReturnType<typeof saveFeedback>;
 }
 
 export async function handleFeedbackPost(
@@ -24,10 +27,7 @@ export async function handleFeedbackPost(
     return Response.json({ error: 'Forbidden origin' }, { status: 403 });
   }
 
-  const clientIp =
-    request.headers.get('cf-connecting-ip') ??
-    request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
-    'local';
+  const clientIp = deps.clientIp ?? 'local';
 
   const limiter = deps.limiter ?? feedbackRateLimiter;
   const rateDecision = limiter.check(`feedback:${clientIp}`);
@@ -73,29 +73,37 @@ export async function handleFeedbackPost(
     );
   }
 
-  const referenceId = `FB-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
+  const { category, subject, description, replyEmail } = parsed.data;
+  const saved = await deps.save?.({ category, subject, description, replyEmail });
+  if (!saved?.ok) return Response.json({ error: 'feedback_unavailable' }, { status: 503 });
+  const referenceId = formatFeedbackReference(saved.data);
 
-  // Phase 1 logs only structured non-PII telemetry until Phase 2 DB persistence lands.
   console.info(
     JSON.stringify({
       event: 'feedback_received',
       referenceId,
-      category: parsed.data.category,
-      hasReplyEmail: Boolean(parsed.data.replyEmail),
+      category,
+      hasReplyEmail: Boolean(replyEmail),
     }),
   );
 
   return Response.json({ ok: true, referenceId }, { status: 201 });
 }
 
-export const POST: APIRoute = async ({ request, url }) => {
-  const { env: runtimeEnv } = await import('cloudflare:workers');
-  const turnstileSecret =
-    runtimeEnv.TURNSTILE_SECRET_KEY ?? import.meta.env.TURNSTILE_SECRET_KEY;
-  const siteUrl = runtimeEnv.PUBLIC_SITE_URL ?? import.meta.env.PUBLIC_SITE_URL;
+export const POST: APIRoute = async (context) => {
+  const [{ getSecret }, { getClientIp, getRuntimePublicApiConfig }] = await Promise.all([
+    import('astro:env/server'), import('../../lib/server-config.js'),
+  ]);
+  const turnstileSecret = getSecret('TURNSTILE_SECRET_KEY') ?? import.meta.env.TURNSTILE_SECRET_KEY;
+  const siteUrl = getSecret('PUBLIC_SITE_URL') ?? context.site?.origin ?? import.meta.env.PUBLIC_SITE_URL;
+  const clientIp = getClientIp(context);
+  const config = getRuntimePublicApiConfig();
+  const writeKey = getSecret('FEEDBACK_WRITE_KEY')?.trim();
 
-  return handleFeedbackPost(request, url, {
+  return handleFeedbackPost(context.request, context.url, {
     ...(turnstileSecret ? { turnstileSecret } : {}),
     ...(siteUrl ? { siteUrl } : {}),
+    ...(clientIp ? { clientIp } : {}),
+    ...(config && writeKey ? { save: (submission) => saveFeedback(config, writeKey, submission) } : {}),
   });
 };

@@ -168,6 +168,15 @@ export function spotsLeft(meetup: Pick<PublicMeetup, 'capacity' | 'attendee_coun
   return Math.max(meetup.capacity - meetup.attendee_count, 0);
 }
 
+export function isCurrentPublicMeetup(meetup: PublicMeetupDetail, now = new Date()): boolean {
+  const end = meetup.ends_at ? Date.parse(meetup.ends_at) : Date.parse(meetup.starts_at) + 3 * 60 * 60 * 1000;
+  return meetup.status === 'published' && end > now.getTime();
+}
+
+export function hasMeetupSearchParams(params: URLSearchParams): boolean {
+  return ['category', 'when', 'after'].some((name) => params.has(name));
+}
+
 // ---------------------------------------------------------------------------------------------
 // Event structured data: only for approved, accurate, current events (plan 3.8 / 10)
 // ---------------------------------------------------------------------------------------------
@@ -177,9 +186,7 @@ export function buildEventJsonLd(
   siteOrigin: string,
   now: Date = new Date(),
 ): Record<string, unknown> | null {
-  if (meetup.status !== 'published') return null;
-  const end = new Date(meetup.ends_at ?? meetup.starts_at);
-  if (end.getTime() < now.getTime()) return null;
+  if (!isCurrentPublicMeetup(meetup, now)) return null;
 
   const region = CITIES.find((c) => c.slug === meetup.city_slug)?.state;
   return {

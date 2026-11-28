@@ -41,7 +41,7 @@ const verifiedFactors = z.object({
   })).nullish(),
 }).nullable();
 
-async function authenticatedRequest<T>(
+export async function authenticatedRequest<T>(
   config: PublicApiConfig, token: string, path: string, read: (response: Response) => Promise<T>,
   args?: Record<string, unknown>,
 ): Promise<{ ok: true; data: T } | { ok: false; status: number }> {

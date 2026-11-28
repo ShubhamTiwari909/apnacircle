@@ -338,8 +338,8 @@ rollback;
 begin;
 select plan(3);
 
-select has_insert_privilege('public', 'feedback', 'anon', 'anon can insert feedback');
-select has_insert_privilege('public', 'feedback', 'authenticated', 'authenticated can insert feedback');
+select not has_insert_privilege('public', 'feedback', 'anon', 'anon cannot insert feedback directly');
+select not has_insert_privilege('public', 'feedback', 'authenticated', 'authenticated cannot insert feedback directly');
 select has_select_privilege('public', 'feedback', 'authenticated', 'authenticated can select feedback');
 
 select * from finish();

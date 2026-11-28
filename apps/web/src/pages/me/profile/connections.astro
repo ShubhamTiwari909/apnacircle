@@ -1,5 +1,5 @@
 ---
-import { env } from 'cloudflare:workers';
+import { getRuntimePublicApiConfig } from '../../../lib/server-config.js';
 import { t } from '@apnacircle/i18n';
 import { z } from 'zod';
 import BaseLayout from '../../../layouts/BaseLayout.astro';
@@ -7,17 +7,12 @@ import {
   blockConnectionMember, CONNECTION_REQUESTS_PATH, decideConnectionRequest, listConnections,
   listConnectionRequests, readConnectionForm, removeConnection, REQUEST_PREFERENCES_PATH,
 } from '../../../lib/connection-requests.js';
-import { getPublicApiConfig } from '../../../lib/meetups.js';
 import { CONNECTION_CONTACT_PATH, PROFILE_AUTH_PATH, PROFILE_SESSION } from '../../../lib/profile-editor.js';
 
 export const prerender = false;
 
 const token = Astro.cookies.get(PROFILE_SESSION)?.value;
-const config = getPublicApiConfig({
-  PUBLIC_SUPABASE_URL: env.PUBLIC_SUPABASE_URL ?? import.meta.env.PUBLIC_SUPABASE_URL,
-  PUBLIC_SUPABASE_ANON_KEY:
-    env.PUBLIC_SUPABASE_ANON_KEY ?? import.meta.env.PUBLIC_SUPABASE_ANON_KEY,
-});
+const config = getRuntimePublicApiConfig();
 const tab = Astro.url.searchParams.get('tab');
 const connected = tab === 'connected';
 const outgoing = tab === 'sent';

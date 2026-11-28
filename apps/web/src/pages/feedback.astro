@@ -7,7 +7,7 @@ const turnstileSiteKey =
   import.meta.env.PUBLIC_TURNSTILE_SITE_KEY || '1x00000000000000000000AA';
 ---
 
-<BaseLayout title={t('feedback.pageTitle')} description={t('feedback.pageLead')}>
+<BaseLayout title={t('feedback.pageTitle')} description={t('feedback.pageLead')} noindex={true}>
   <div class="mx-auto max-w-2xl">
     <header>
       <h1 class="text-3xl font-bold tracking-tight text-[var(--ac-ink)] sm:text-4xl">

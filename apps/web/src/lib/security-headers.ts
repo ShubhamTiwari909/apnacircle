@@ -6,6 +6,7 @@ export const PRIVATE_NOINDEX_PREFIXES = [
   '/settings',
   '/u',
   '/api',
+  '/_server-islands',
 ] as const;
 
 // Members-only city routes such as /saharanpur/people (plan 3.1).
@@ -23,9 +24,8 @@ export function isPrivateNoindexPath(pathname: string): boolean {
 }
 
 export function buildContentSecurityPolicy(): string {
+  // Astro emits the document's default and script directives with per-page script hashes.
   return [
-    "default-src 'self'",
-    "script-src 'self' https://challenges.cloudflare.com",
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data:",
     "font-src 'self'",

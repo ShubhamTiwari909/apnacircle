@@ -1,5 +1,5 @@
 ---
-import { env } from 'cloudflare:workers';
+import { getRuntimePublicApiConfig } from '../../../lib/server-config.js';
 import BaseLayout from '../../../layouts/BaseLayout.astro';
 import { t } from '@apnacircle/i18n';
 import { ACTIVE_CITIES } from '@apnacircle/types';
@@ -7,10 +7,9 @@ import { ErrorStateCard } from '@apnacircle/ui';
 import {
   buildEventJsonLd,
   formatMeetupWhen,
-  getPublicApiConfig,
   getPublicMeetup,
+  isCurrentPublicMeetup,
   isFull,
-  serializeJsonLd,
   spotsLeft,
 } from '../../../lib/meetups.js';
 
@@ -23,10 +22,7 @@ if (!cityMeta || !/^[a-z0-9-]{1,80}$/.test(slug)) {
   return Astro.rewrite('/404');
 }
 
-const config = getPublicApiConfig({
-  PUBLIC_SUPABASE_URL: env.PUBLIC_SUPABASE_URL ?? import.meta.env.PUBLIC_SUPABASE_URL,
-  PUBLIC_SUPABASE_ANON_KEY: env.PUBLIC_SUPABASE_ANON_KEY ?? import.meta.env.PUBLIC_SUPABASE_ANON_KEY,
-});
+const config = getRuntimePublicApiConfig();
 const result = config ? await getPublicMeetup(config, cityMeta.slug, slug) : ({ ok: false } as const);
 
 if (result.ok && result.data === null) {
@@ -44,7 +40,8 @@ if (result.ok) {
 
 const meetup = result.ok ? result.data : null;
 const cancelled = meetup?.status === 'cancelled';
-const jsonLd = meetup ? buildEventJsonLd(meetup, Astro.site?.origin ?? Astro.url.origin) : null;
+const current = meetup !== null && isCurrentPublicMeetup(meetup);
+const jsonLd = meetup && Astro.site ? buildEventJsonLd(meetup, Astro.site.origin) : null;
 const listPath = `/${cityMeta.slug}/meetups`;
 ---
 
@@ -52,17 +49,10 @@ const listPath = `/${cityMeta.slug}/meetups`;
   title={meetup ? meetup.title : t('meetups.unavailableTitle')}
   description={meetup ? meetup.description.replace(/\s+/g, ' ').trim().slice(0, 160) : t('meetups.unavailableBody')}
   activeCitySlug={cityMeta.slug}
-  canonicalPath={`${listPath}/${slug}`}
-  noindex={!meetup || cancelled}
+  noindex={!current}
+  structuredData={jsonLd}
+  breadcrumbs={[{ label: t('nav.cities'), path: '/cities' }, { label: cityMeta.name, path: `/${cityMeta.slug}` }, { label: t('nav.meetups'), path: listPath }, { label: meetup?.title ?? t('meetups.unavailableTitle') }]}
 >
-  <Fragment slot="head">
-    {jsonLd ? <script type="application/ld+json" set:html={serializeJsonLd(jsonLd)} /> : null}
-  </Fragment>
-
-  <nav aria-label="Breadcrumb" class="mb-4 text-xs text-[var(--ac-ink-muted)]">
-    <a href={listPath} class="hover:text-[var(--ac-accent)]">{t('meetups.detail.backToList', { city: cityMeta.name })}</a>
-  </nav>
-
   {!meetup ? (
     <ErrorStateCard title={t('meetups.unavailableTitle')} description={t('meetups.unavailableBody')} />
   ) : (

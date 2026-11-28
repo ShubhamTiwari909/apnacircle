@@ -3,6 +3,7 @@ node_modules/
 dist/
 .astro/
 .wrangler/
+.vercel/
 .turbo/
 coverage/
 playwright-report/
@@ -12,6 +13,9 @@ test-results/
 .env
 .env.*
 !.env.example
+.dev.vars
+.dev.vars.*
+.impeccable/hook.cache.json
 
 # Generated policy outputs
 apnacircle-policies/filled/

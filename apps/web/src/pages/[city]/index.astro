@@ -1,6 +1,7 @@
 ---
 import { getCollection, render } from 'astro:content';
 import BaseLayout from '../../layouts/BaseLayout.astro';
+import { articlePath, placePath, publishedArticles, publishedPlaces } from '../../lib/editorial.js';
 import { t } from '@apnacircle/i18n';
 import { ACTIVE_CITIES, CATEGORIES, getCategoryBySlug } from '@apnacircle/types';
 import { ArticleCard, EmptyStateCard, PlaceCard } from '@apnacircle/ui';
@@ -22,14 +23,8 @@ export async function getStaticPaths() {
 const { cityMeta, cityEntry } = Astro.props;
 const { Content } = await render(cityEntry);
 
-const places = await getCollection(
-  'places',
-  ({ data }) => data.status === 'published' && data.citySlug === cityMeta.slug,
-);
-const articles = await getCollection(
-  'articles',
-  ({ data }) => data.status === 'published' && data.citySlug === cityMeta.slug,
-);
+const places = await publishedPlaces(cityMeta.slug);
+const articles = (await publishedArticles()).filter(({ data }) => data.citySlug === cityMeta.slug);
 const faqs = (
   await getCollection(
     'faqs',
@@ -42,13 +37,8 @@ const faqs = (
   title={cityEntry.data.title}
   description={cityEntry.data.summary}
   activeCitySlug={cityMeta.slug}
+  breadcrumbs={[{ label: t('nav.cities'), path: '/cities' }, { label: cityMeta.name }]}
 >
-  <nav aria-label="Breadcrumb" class="mb-4 text-xs text-[var(--ac-ink-muted)]">
-    <a href="/cities" class="hover:text-[var(--ac-accent)]">{t('city.breadcrumbCities')}</a>
-    <span aria-hidden="true" class="mx-1.5">/</span>
-    <span class="font-medium text-[var(--ac-ink)]">{cityMeta.name}</span>
-  </nav>
-
   <section class="rounded-3xl border border-[var(--ac-border)] bg-[var(--ac-surface)] p-6 shadow-[var(--ac-shadow-card)] sm:p-10">
     <h1 class="text-3xl font-bold tracking-tight text-[var(--ac-ink)] sm:text-4xl">
       {cityEntry.data.title}
@@ -133,7 +123,7 @@ const faqs = (
               summary={place.data.summary}
               publicAccessNote={place.data.publicAccessNote}
               lastVerifiedAt={t('article.verifiedOn', { date: place.data.lastVerifiedAt })}
-              href={`/${cityMeta.slug}/${place.data.categorySlug}`}
+              href={placePath(cityMeta.slug, place.id)}
             />
           );
         })
@@ -166,7 +156,7 @@ const faqs = (
           <ArticleCard
             title={article.data.title}
             description={article.data.description}
-            href={`/${cityMeta.slug}/blog/${article.id}`}
+            href={articlePath(cityMeta.slug, article.id)}
             reviewedBy={t('article.byline', { reviewer: article.data.reviewedBy })}
             lastVerifiedAt={t('article.verifiedOn', { date: article.data.lastVerifiedAt })}
           />

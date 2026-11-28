@@ -1,0 +1,22 @@
+---
+import { t } from '@apnacircle/i18n';
+import { authenticatedRequest } from '../lib/connection-abuse.js';
+import { LEGACY_PROFILE_SESSION, PROFILE_AUTH_PATH, PROFILE_PATH, PROFILE_SESSION } from '../lib/profile-editor.js';
+import { getRuntimePublicApiConfig } from '../lib/server-config.js';
+
+interface Props {
+  guestOnly?: boolean;
+}
+const { guestOnly = false } = Astro.props;
+const token = guestOnly ? undefined : (Astro.cookies.get(PROFILE_SESSION) ?? Astro.cookies.get(LEGACY_PROFILE_SESSION))?.value;
+const config = token ? getRuntimePublicApiConfig() : null;
+const session = config && token ? await authenticatedRequest(config, token, '/auth/v1/user', async () => null) : null;
+const signedIn = Boolean(session?.ok);
+---
+
+<a
+  href={signedIn ? PROFILE_PATH : `${PROFILE_AUTH_PATH}?start=1`}
+  class="inline-flex min-h-11 items-center justify-center whitespace-nowrap rounded-xl bg-[var(--ac-accent)] px-2.5 text-sm font-semibold text-white hover:bg-[var(--ac-accent-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ac-accent)] sm:px-4"
+>
+  {t(signedIn ? 'nav.account' : 'nav.signIn')}
+</a>

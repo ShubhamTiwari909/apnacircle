@@ -2,11 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { getSecurityHeaders, isPrivateNoindexPath } from './security-headers.js';
 
 describe('security headers', () => {
-  it('enforces strict CSP without unsafe-inline scripts and sets frame-ancestors none', () => {
+  it('blocks framing and leaves script and default directives to the hashed document policy', () => {
     const headers = getSecurityHeaders('/saharanpur');
     const csp = headers['Content-Security-Policy'] ?? '';
     expect(csp).toContain("frame-ancestors 'none'");
-    expect(csp).not.toContain("script-src 'self' 'unsafe-inline'");
+    expect(csp).not.toMatch(/(?:^|;\s*)(?:default-src|script-src) /);
     expect(headers['X-Content-Type-Options']).toBe('nosniff');
     expect(headers['X-Frame-Options']).toBe('DENY');
     expect(headers['X-Robots-Tag']).toBeUndefined();

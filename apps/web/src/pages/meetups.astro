@@ -1,10 +1,10 @@
 ---
-import { env } from 'cloudflare:workers';
+import { getRuntimePublicApiConfig } from '../lib/server-config.js';
 import BaseLayout from '../layouts/BaseLayout.astro';
 import MeetupListing from '../components/MeetupListing.astro';
 import { t } from '@apnacircle/i18n';
-import { CATEGORIES } from '@apnacircle/types';
-import { getPublicApiConfig, listPublicMeetups, parseListingQuery } from '../lib/meetups.js';
+import { ACTIVE_CITIES, CATEGORIES } from '@apnacircle/types';
+import { hasMeetupSearchParams, listPublicMeetups, parseListingQuery } from '../lib/meetups.js';
 
 // Dynamic (plan 7.5): rendered per request, shared-cache for 60 seconds.
 export const prerender = false;
@@ -15,10 +15,7 @@ const query = parseListingQuery(
   null,
   CATEGORIES.map((c) => c.slug),
 );
-const config = getPublicApiConfig({
-  PUBLIC_SUPABASE_URL: env.PUBLIC_SUPABASE_URL ?? import.meta.env.PUBLIC_SUPABASE_URL,
-  PUBLIC_SUPABASE_ANON_KEY: env.PUBLIC_SUPABASE_ANON_KEY ?? import.meta.env.PUBLIC_SUPABASE_ANON_KEY,
-});
+const config = getRuntimePublicApiConfig();
 const result = config ? await listPublicMeetups(config, query) : ({ ok: false } as const);
 
 // Never cache or index an outage: 503 + no-store. Healthy pages are shared-cached for 60 seconds (plan 7.5).
@@ -36,13 +33,14 @@ if (query.categorySlug) nextParams.set('category', query.categorySlug);
 if (query.when !== 'any') nextParams.set('when', query.when);
 if (nextCursor) nextParams.set('after', nextCursor);
 const nextHref = nextCursor ? `/meetups?${nextParams.toString()}` : null;
+const canonical = ACTIVE_CITIES.length === 1 && ACTIVE_CITIES[0] ? `/${ACTIVE_CITIES[0].slug}/meetups` : '/meetups';
 ---
 
 <BaseLayout
   title={t('meetups.pageTitle')}
   description={t('meetups.pageLead')}
-  canonicalPath="/meetups"
-  noindex={isFiltered || query.cursor !== null}
+  canonicalPath={canonical}
+  noindex={!result.ok || hasMeetupSearchParams(Astro.url.searchParams)}
 >
   <header class="max-w-3xl">
     <div class="flex flex-wrap gap-2">

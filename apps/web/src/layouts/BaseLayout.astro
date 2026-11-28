@@ -1,7 +1,11 @@
 ---
 import '../styles/global.css';
 import { t } from '@apnacircle/i18n';
-import { CitySwitcher, LanguageSwitcher, MobileNavigation } from '@apnacircle/ui';
+import HeaderAccount from '../components/HeaderAccount.astro';
+import { CitySwitcher, isNavigationActive, MobileNavigation, PRIMARY_NAV_LINKS } from '@apnacircle/ui';
+import { serializeJsonLd } from '../lib/meetups.js';
+import { isPrivateNoindexPath } from '../lib/security-headers.js';
+import { articleJsonLd, breadcrumbJsonLd, publicUrl, siteJsonLd, socialImage, verificationToken, type Crumb } from '../lib/seo.js';
 
 export interface Props {
   title: string;
@@ -10,6 +14,9 @@ export interface Props {
   activeCitySlug?: string;
   /** Path (no query string) that search engines should treat as the canonical URL. */
   canonicalPath?: string;
+  breadcrumbs?: readonly Crumb[];
+  articleAuthor?: string;
+  structuredData?: Record<string, unknown> | null;
 }
 
 const {
@@ -18,20 +25,29 @@ const {
   noindex = false,
   activeCitySlug = 'saharanpur',
   canonicalPath,
+  breadcrumbs = [],
+  articleAuthor,
+  structuredData,
 } = Astro.props;
 
 const currentPath = Astro.url.pathname;
 const fullTitle = title === t('brand.name') ? title : `${title} · ${t('brand.name')}`;
+const site = Astro.site;
+const privatePage = isPrivateNoindexPath(Astro.originPathname);
+const unavailable = (Astro.response.status ?? 200) >= 400;
+const indexable = Boolean(site && !noindex && !privatePage && !unavailable);
+const canonical = site && !privatePage && !unavailable && (indexable || canonicalPath)
+  ? publicUrl(site, canonicalPath ?? currentPath) : undefined;
+const home = currentPath === '/';
+const googleToken = indexable && home ? verificationToken(import.meta.env.PUBLIC_GOOGLE_SITE_VERIFICATION) : undefined;
+const graphs: Record<string, unknown>[] = [];
+if (site && canonical && indexable) {
+  if (home) graphs.push(siteJsonLd(site, t('brand.name'), description));
+  if (breadcrumbs.length > 1) graphs.push(breadcrumbJsonLd(site, breadcrumbs, canonical));
+  if (articleAuthor) graphs.push(articleJsonLd(site, canonical, { title, description, author: articleAuthor }));
+  if (structuredData) graphs.push(structuredData);
+}
 
-const desktopNav = [
-  { href: '/saharanpur', label: t('nav.cities') },
-  { href: '/meetups', label: t('nav.meetups') },
-  { href: '/places', label: t('nav.places') },
-  { href: '/people', label: t('nav.people') },
-  { href: '/safety', label: t('nav.safety') },
-  { href: '/about', label: t('nav.about') },
-  { href: '/feedback', label: t('nav.feedback') },
-];
 ---
 
 <!doctype html>
@@ -39,10 +55,27 @@ const desktopNav = [
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" href="/favicon.ico" sizes="any" />
     <title>{fullTitle}</title>
     <meta name="description" content={description} />
-    {noindex ? <meta name="robots" content="noindex, nofollow" /> : null}
-    {canonicalPath ? <link rel="canonical" href={new URL(canonicalPath, Astro.site ?? Astro.url).href} /> : null}
+    {!indexable && <meta name="robots" content={privatePage || unavailable || !site ? 'noindex, nofollow' : 'noindex, follow'} />}
+    {canonical && <link rel="canonical" href={canonical} />}
+    {site && indexable && canonical && (
+      <>
+        <meta property="og:title" content={fullTitle} />
+        <meta property="og:description" content={description} />
+        <meta property="og:url" content={canonical} />
+        <meta property="og:type" content={articleAuthor ? 'article' : 'website'} />
+        <meta property="og:site_name" content={t('brand.name')} />
+        <meta property="og:locale" content="en_IN" />
+        <meta property="og:image" content={publicUrl(site, socialImage)} />
+        <meta property="og:image:width" content="1200" />
+        <meta property="og:image:height" content="630" />
+        <meta property="og:image:alt" content={t('brand.name')} />
+      </>
+    )}
+    {googleToken && <meta name="google-site-verification" content={googleToken} />}
+    {graphs.map((graph) => <script type="application/ld+json" set:html={serializeJsonLd(graph)} />)}
     <slot name="head" />
   </head>
   <body class="flex min-h-screen flex-col bg-[var(--ac-bg)] text-[var(--ac-ink)]">
@@ -54,73 +87,61 @@ const desktopNav = [
     </a>
 
     <header class="relative border-b border-[var(--ac-border)] bg-[var(--ac-surface)]">
-      <div class="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3.5 sm:px-6">
-        <div class="flex items-center gap-3">
-          <a
-            href="/"
-            class="flex items-center gap-2 text-lg font-bold tracking-tight text-[var(--ac-ink)]"
-          >
-            <span
-              class="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-[var(--ac-accent)] text-sm font-bold text-white"
-              aria-hidden="true"
-            >
-              AC
-            </span>
-            <span>{t('brand.name')}</span>
-          </a>
-          <span
-            class="hidden rounded-full border border-[var(--ac-border)] bg-[var(--ac-surface-muted)] px-2.5 py-0.5 text-xs font-medium text-[var(--ac-ink-muted)] sm:inline-block"
-          >
-            {t('brand.workingTitleBadge')}
-          </span>
-        </div>
+      <div class="mx-auto flex min-h-16 max-w-6xl items-center justify-between gap-2 px-3 sm:gap-4 sm:px-6">
+        <a
+          href="/"
+          class="flex shrink-0 items-center gap-2 whitespace-nowrap rounded-lg text-base font-bold tracking-tight text-[var(--ac-ink)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ac-accent)] sm:text-lg"
+        >
+          <img src="/apnacircle-mark.png" width="32" height="32" alt="" />
+          <span>{t('brand.name')}</span>
+        </a>
 
-        <nav aria-label={t('nav.home')} class="hidden md:block">
-          <ul class="flex flex-wrap items-center gap-1">
-            {
-              desktopNav.map((item) => {
-                const isActive =
-                  currentPath === item.href ||
-                  (item.href !== '/' && currentPath.startsWith(item.href));
-                return (
-                  <li>
-                    <a
-                      href={item.href}
-                      aria-current={isActive ? 'page' : undefined}
-                      class={`rounded-xl px-3 py-2 text-sm font-medium transition-colors ${
-                        isActive
-                          ? 'bg-[var(--ac-accent-soft)] text-[var(--ac-accent)]'
-                          : 'text-[var(--ac-ink)] hover:bg-[var(--ac-surface-muted)]'
-                      }`}
-                    >
-                      {item.label}
-                    </a>
-                  </li>
-                );
-              })
-            }
+        <nav aria-label={t('nav.primary')} class="hidden lg:block">
+          <ul class="flex items-center gap-0.5 whitespace-nowrap xl:gap-1">
+            {PRIMARY_NAV_LINKS.map(({ href, key }) => {
+              const isActive = isNavigationActive(currentPath, href);
+              return (
+                <li>
+                  <a
+                    href={href}
+                    aria-current={isActive ? 'page' : undefined}
+                    class={`inline-flex min-h-11 items-center rounded-lg px-2.5 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ac-accent)] xl:px-3 ${
+                      isActive
+                        ? 'bg-[var(--ac-accent-soft)] text-[var(--ac-accent)]'
+                        : 'text-[var(--ac-ink)] hover:bg-[var(--ac-surface-muted)]'
+                    }`}
+                  >
+                    {t(key)}
+                  </a>
+                </li>
+              );
+            })}
           </ul>
         </nav>
 
-        <div class="flex items-center gap-2">
-          <div class="hidden lg:block">
-            <LanguageSwitcher />
-          </div>
-          <MobileNavigation client:load currentPath={currentPath} />
-        </div>
-      </div>
-
-      <div class="border-t border-[var(--ac-border)] bg-[var(--ac-bg)]">
-        <div class="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-2 sm:px-6">
+        <div class="flex shrink-0 items-center gap-2">
           <CitySwitcher activeSlug={activeCitySlug} />
-          <div class="lg:hidden">
-            <LanguageSwitcher />
-          </div>
+          <HeaderAccount server:defer>
+            <HeaderAccount slot="fallback" guestOnly />
+          </HeaderAccount>
+          <MobileNavigation currentPath={currentPath} />
         </div>
       </div>
     </header>
 
     <main id="main-content" class="mx-auto w-full max-w-6xl flex-1 px-4 py-8 sm:px-6 sm:py-12">
+      {breadcrumbs.length > 1 && (
+        <nav aria-label={t('seo.breadcrumbs')} class="mb-4 text-xs text-[var(--ac-ink-muted)]">
+          <ol class="flex flex-wrap items-center gap-x-2 gap-y-1">
+            {breadcrumbs.map(({ label, path }, index) => (
+              <li class="flex items-center gap-x-2">
+                {index > 0 && <span aria-hidden="true">/</span>}
+                {path ? <a href={path} class="hover:text-[var(--ac-accent)]">{label}</a> : <span aria-current="page" class="font-medium text-[var(--ac-ink)]">{label}</span>}
+              </li>
+            ))}
+          </ol>
+        </nav>
+      )}
       <slot />
     </main>
 

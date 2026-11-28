@@ -1,9 +1,8 @@
 ---
-import { env } from 'cloudflare:workers';
+import { getRuntimePublicApiConfig } from '../../../lib/server-config.js';
 import { t } from '@apnacircle/i18n';
 import BaseLayout from '../../../layouts/BaseLayout.astro';
 import { CONNECTION_REQUESTS_PATH } from '../../../lib/connection-requests.js';
-import { getPublicApiConfig } from '../../../lib/meetups.js';
 import { isAllowedOrigin } from '../../../lib/origin.js';
 import {
   getProfileEditor,
@@ -23,17 +22,14 @@ import {
 
 export const prerender = false;
 
-const config = getPublicApiConfig({
-  PUBLIC_SUPABASE_URL: env.PUBLIC_SUPABASE_URL ?? import.meta.env.PUBLIC_SUPABASE_URL,
-  PUBLIC_SUPABASE_ANON_KEY:
-    env.PUBLIC_SUPABASE_ANON_KEY ?? import.meta.env.PUBLIC_SUPABASE_ANON_KEY,
-});
+const config = getRuntimePublicApiConfig();
 const isPost = Astro.request.method === 'POST';
 function clearSession() {
   Astro.cookies.delete(PROFILE_SESSION, profileCookieOptions(Astro.url, PROFILE_SESSION_PATH));
   Astro.cookies.delete(LEGACY_PROFILE_SESSION, profileCookieOptions(Astro.url, PROFILE_PATH));
 }
 const token = (Astro.cookies.get(PROFILE_SESSION) ?? Astro.cookies.get(LEGACY_PROFILE_SESSION))?.value;
+let signedIn = Boolean(token);
 let submitted: FormData | undefined;
 
 if (isPost) {
@@ -76,7 +72,10 @@ if (!config) {
   if (result.ok) {
     editor = result.data;
   } else if (result.reason === 'session' || result.reason === 'membership') {
-    clearSession();
+    if (result.reason === 'session') {
+      clearSession();
+      signedIn = false;
+    }
     Astro.response.status = result.reason === 'session' ? 401 : 403;
     notice = result.reason === 'session' ? 'expired' : 'membership';
   } else {
@@ -98,7 +97,10 @@ if (config && token && form) {
       invalid.add(result.field);
       Astro.response.status = 422;
     } else if (result.reason === 'session' || result.reason === 'membership') {
-      clearSession();
+      if (result.reason === 'session') {
+        clearSession();
+        signedIn = false;
+      }
       editor = undefined;
       Astro.response.status = result.reason === 'session' ? 401 : 403;
       notice = result.reason === 'session' ? 'expired' : 'membership';
@@ -113,7 +115,7 @@ const values = form ?? editor?.profile;
 const saved = !isPost && Astro.url.searchParams.get('saved') === '1';
 const legacyIntent = editor?.profile.intent;
 const notices = {
-  membership: t('profile.membershipRequired'),
+  membership: t(signedIn ? 'profile.signedInMembershipRequired' : 'profile.membershipRequired'),
   unavailable: t('profile.unavailable'),
   expired: t('profile.sessionExpired'),
   signin: t('profile.signInFailed'),
@@ -138,9 +140,9 @@ const check = 'mt-0.5 size-5 shrink-0 accent-[var(--ac-accent)]';
   <section class="mx-auto max-w-2xl">
     <header class="mb-7">
       <h1 class="text-3xl font-bold tracking-tight sm:text-4xl">{t('profile.title')}</h1>
-      <p class="mt-2 text-[var(--ac-ink-muted)]">
-        {editor ? t('profile.description') : t('profile.signInDescription')}
-      </p>
+      {(editor || !signedIn) && (
+        <p class="mt-2 text-[var(--ac-ink-muted)]">{t(editor ? 'profile.description' : 'profile.signInDescription')}</p>
+      )}
     </header>
     {
       notice && (
@@ -329,18 +331,10 @@ const check = 'mt-0.5 size-5 shrink-0 accent-[var(--ac-accent)]';
             <a href={`${PROFILE_PATH}/photos`} class="inline-flex min-h-11 items-center underline underline-offset-4">{t('photos.manage')}</a>
             <a href={CONNECTION_REQUESTS_PATH} class="inline-flex min-h-11 items-center underline underline-offset-4">{t('connections.title')}</a>
           </div>
-          <form method="post" action={PROFILE_PATH} class="mt-4">
-            <button
-              name="action"
-              value="sign-out"
-              class="min-h-11 px-1 text-sm font-semibold underline underline-offset-4 hover:text-[var(--ac-accent)]"
-            >
-              {t('profile.signOut')}
-            </button>
-          </form>
         </>
       ) : (
         config &&
+        !signedIn &&
         notice !== 'unavailable' && (
           <a class={primaryButton} href={`${PROFILE_AUTH_PATH}?start=1`}>
             {t('profile.signIn')}
@@ -348,5 +342,16 @@ const check = 'mt-0.5 size-5 shrink-0 accent-[var(--ac-accent)]';
         )
       )
     }
+    {signedIn && (
+      <form method="post" action={PROFILE_PATH} class="mt-4">
+        <button
+          name="action"
+          value="sign-out"
+          class="min-h-11 px-1 text-sm font-semibold underline underline-offset-4 hover:text-[var(--ac-accent)]"
+        >
+          {t('profile.signOut')}
+        </button>
+      </form>
+    )}
   </section>
 </BaseLayout>

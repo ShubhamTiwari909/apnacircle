@@ -1,10 +1,10 @@
 ---
-import { env } from 'cloudflare:workers';
+import { getClientIp, getRuntimePublicApiConfig } from '../../lib/server-config.js';
 import { t } from '@apnacircle/i18n';
 import { ACTIVE_CITIES } from '@apnacircle/types';
 import BaseLayout from '../../layouts/BaseLayout.astro';
 import PeopleDirectory from '../../components/PeopleDirectory.astro';
-import { formatMeetupWhen, getPublicApiConfig } from '../../lib/meetups.js';
+import { formatMeetupWhen } from '../../lib/meetups.js';
 import { getPeoplePage } from '../../lib/people.js';
 import {
   directoryReadIpLimiter,
@@ -13,7 +13,7 @@ import {
   type DirectoryPage,
 } from '../../lib/people-directory.js';
 import { fetchSignedProfilePhotoUrls } from '../../lib/profile-photo-links.js';
-import { PROFILE_AUTH_PATH, PROFILE_SESSION } from '../../lib/profile-editor.js';
+import { PROFILE_AUTH_PATH, PROFILE_PATH, PROFILE_SESSION } from '../../lib/profile-editor.js';
 
 export const prerender = false;
 
@@ -22,17 +22,13 @@ if (!routeCity) return Astro.rewrite('/404');
 const globalDirectory = Astro.originPathname.replace(/\/$/, '') === '/people';
 const filters = readDirectoryFilters(Astro.url.searchParams, globalDirectory ? null : routeCity.slug);
 const city = ACTIVE_CITIES.find((item) => item.slug === filters.city) ?? routeCity;
-const config = getPublicApiConfig({
-  PUBLIC_SUPABASE_URL: env.PUBLIC_SUPABASE_URL ?? import.meta.env.PUBLIC_SUPABASE_URL,
-  PUBLIC_SUPABASE_ANON_KEY:
-    env.PUBLIC_SUPABASE_ANON_KEY ?? import.meta.env.PUBLIC_SUPABASE_ANON_KEY,
-});
+const config = getRuntimePublicApiConfig();
 const token = Astro.cookies.get(PROFILE_SESSION)?.value;
-const result = config ? await getPeoplePage(config, city.slug, token) : ({ ok: false } as const);
+const result = config ? await getPeoplePage(config, city.slug, token) : ({ ok: false, signedIn: Boolean(token) } as const);
 const data = result.ok ? result.data : null;
 let directory: DirectoryPage | { status: 'unavailable' } | null = null;
 if (config && token && data?.teaser === null) {
-  const ip = Astro.request.headers.get('CF-Connecting-IP');
+  const ip = getClientIp(Astro);
   const allowance = ip ? directoryReadIpLimiter.check(ip) : null;
   if (allowance && !allowance.allowed) {
     Astro.response.headers.set('Retry-After', String(allowance.retryAfterSeconds));
@@ -62,7 +58,8 @@ const status =
       ? 'locked'
       : 'ready';
 const teaser = data?.teaser;
-const showSignIn = directory?.status === 'session' || (data ? teaser !== null : !token);
+const showSignIn = directory?.status === 'session' || !result.signedIn;
+const needsMembership = result.signedIn && Boolean(teaser);
 const signInHref = `${PROFILE_AUTH_PATH}?${new URLSearchParams({ start: '1', returnTo: globalDirectory ? '/people' : `/${city.slug}/people` })}`;
 const signInOutcome = Astro.url.searchParams.get('signin');
 const signInError =
@@ -104,6 +101,13 @@ const signInError =
             >
               {t('profile.signIn')}
             </a>
+          </div>
+        )}
+
+        {needsMembership && (
+          <div class="mt-5">
+            <p class="text-sm">{t('profile.signedInMembershipRequired')}</p>
+            <a href={PROFILE_PATH} class="inline-flex min-h-11 items-center text-sm font-semibold underline underline-offset-4">{t('nav.account')}</a>
           </div>
         )}
 

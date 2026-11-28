@@ -1,0 +1,88 @@
+---
+import { t } from '@apnacircle/i18n';
+import BaseLayout from '../../../layouts/BaseLayout.astro';
+import { feedbackInboxQuery, formatFeedbackReference, getFeedback, listFeedback } from '../../../lib/feedback.js';
+import { formatMeetupWhen } from '../../../lib/meetups.js';
+import { CONNECTION_ABUSE_PATH, FEEDBACK_INBOX_PATH, PROFILE_AUTH_PATH, PROFILE_SESSION } from '../../../lib/profile-editor.js';
+import { getRuntimePublicApiConfig } from '../../../lib/server-config.js';
+
+export const prerender = false;
+
+const query = feedbackInboxQuery.safeParse({
+  after: Astro.url.searchParams.get('after') ?? undefined,
+  id: Astro.url.searchParams.get('id') ?? undefined,
+});
+if (!query.success) return new Response(null, { status: 400 });
+
+const { after, id } = query.data;
+const token = Astro.cookies.get(PROFILE_SESSION)?.value;
+const config = getRuntimePublicApiConfig();
+const detail = config && token && id ? await getFeedback(config, token, id) : null;
+const queue = config && token && !id ? await listFeedback(config, token, after) : null;
+const result = detail ?? queue;
+const status = result?.ok ? 200 : result?.status ?? (token ? 503 : 401);
+Astro.response.status = [200, 401, 403, 404, 422, 428].includes(status) ? status : 503;
+
+function inboxHref(cursor?: string, selected?: string) {
+  const params = new URLSearchParams();
+  if (cursor) params.set('after', cursor);
+  if (selected) params.set('id', selected);
+  return params.size ? `${FEEDBACK_INBOX_PATH}?${params}` : FEEDBACK_INBOX_PATH;
+}
+const signInHref = `${PROFILE_AUTH_PATH}?${new URLSearchParams({ start: '1', returnTo: FEEDBACK_INBOX_PATH })}`;
+const item = detail?.ok ? detail.data : null;
+const inbox = queue?.ok ? queue.data : null;
+const link = 'inline-flex min-h-11 items-center text-sm font-semibold text-[var(--ac-accent)] underline underline-offset-4';
+---
+
+<BaseLayout title={t('feedbackInbox.title')} noindex={true}>
+  <section class="mx-auto max-w-3xl">
+    {id && <a href={inboxHref(after)} class={link}>{t('feedbackInbox.back')}</a>}
+    <h1 class="text-3xl font-bold tracking-tight sm:text-4xl">{t('feedbackInbox.title')}</h1>
+
+    {status === 401 ? (
+      <a href={signInHref} class:list={[link, 'mt-3']}>{t('profile.signIn')}</a>
+    ) : status === 403 ? (
+      <p class="mt-4 text-sm">{t('feedbackInbox.forbidden')}</p>
+    ) : status === 428 ? (
+      <a href={CONNECTION_ABUSE_PATH} class:list={[link, 'mt-3']}>{t('feedbackInbox.verify')}</a>
+    ) : item ? (
+      <article class="mt-6 rounded-xl border border-[var(--ac-border)] bg-[var(--ac-surface)] p-4 sm:p-6">
+        <p class="text-sm text-[var(--ac-ink-muted)]">{t(`feedback.category.${item.category}`)} · <time datetime={item.created_at}>{formatMeetupWhen(item.created_at, null)}</time></p>
+        <h2 class="mt-1 break-words text-xl font-semibold">{item.subject}</h2>
+        <p class="mt-4 whitespace-pre-wrap break-words text-sm leading-relaxed">{item.message}</p>
+        <dl class="mt-5 space-y-3 border-t border-[var(--ac-border)] pt-4 text-sm">
+          <div>
+            <dt class="font-semibold">{t('feedbackInbox.reference')}</dt>
+            <dd class="break-all text-[var(--ac-ink-muted)]">{formatFeedbackReference(item.id)}</dd>
+          </div>
+          {item.contact_email && <div>
+            <dt class="font-semibold">{t('feedbackInbox.replyEmail')}</dt>
+            <dd class="break-all text-[var(--ac-ink-muted)]">{item.contact_email}</dd>
+          </div>}
+        </dl>
+      </article>
+    ) : inbox ? (
+      inbox.items.length ? (
+        <>
+          <ul class="mt-6 divide-y divide-[var(--ac-border)] border-y border-[var(--ac-border)]">
+            {inbox.items.map((feedback) => (
+              <li>
+                <a href={inboxHref(after, feedback.id)} class="block px-2 py-3 hover:bg-[var(--ac-surface-muted)] focus-visible:outline-2 focus-visible:outline-offset-2 sm:px-3">
+                  <p class="break-words text-sm font-semibold">{feedback.subject}</p>
+                  <p class="mt-1 text-sm text-[var(--ac-ink-muted)]">
+                    {t(`feedback.category.${feedback.category}`)} · <time datetime={feedback.created_at}>{formatMeetupWhen(feedback.created_at, null)}</time>
+                  </p>
+                </a>
+              </li>
+            ))}
+          </ul>
+          {inbox.nextCursor && <a href={inboxHref(inbox.nextCursor)} class:list={[link, 'mt-3']}>{t('feedbackInbox.older')}</a>}
+          {after && <a href={inboxHref()} class:list={[link, 'mt-3 ml-5']}>{t('feedbackInbox.newest')}</a>}
+        </>
+      ) : <p class="mt-4 text-sm">{t('feedbackInbox.empty')}</p>
+    ) : (
+      <p role="alert" class="mt-4 text-sm">{t(status === 404 ? 'feedbackInbox.missing' : 'feedbackInbox.unavailable')}</p>
+    )}
+  </section>
+</BaseLayout>

@@ -7,6 +7,9 @@
 -- EXTENSIONS
 -- =============================================================================
 
+-- Hosted Supabase may already have these extensions in the extensions schema.
+set local search_path = public, extensions;
+
 create extension if not exists "pgcrypto";
 create extension if not exists "pg_trgm";
 create extension if not exists "uuid-ossp";
