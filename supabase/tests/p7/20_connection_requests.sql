@@ -102,13 +102,33 @@ select t.ok((select trust_level = 'Restricted' and not trust_sanction_only from 
   'the fifth recent decline automatically restricts the sender');
 
 select public_id as report_target from public.profiles where id = t.u(9102) \gset
+insert into public.connection_requests (id, sender_id, receiver_id) values
+  (t.u(9360), t.u(9102), t.u(9230)), (t.u(9361), t.u(9102), t.u(9231)), (t.u(9362), t.u(9102), t.u(9232));
+-- Exercise the generic reports endpoint's writer: the reported UUID and snapshot do not
+-- prove that the reporter received a request, and profile reports bypass the scoped RPC.
+select t.as_service();
+insert into public.reports (reporter_id, target_type, target_id, category, evidence_snapshot, sla_due_at) values
+  (t.u(9233), 'connection_request', t.u(9360), 'spam', jsonb_build_object('receiver_id', t.u(9233)), now()),
+  (t.u(9234), 'connection_request', t.u(9360), 'spam', null, now()),
+  (t.u(9231), 'profile', t.u(9102), 'spam', null, now());
+reset role;
+select t.as_user(t.u(9233));
+select public.report_connection_member(:'report_target', null, 'spam', 'Visible profile without an incoming request');
+reset role;
+select t.ok((select trust_level = 'L1' from public.profiles where id = t.u(9102))
+  and app_private.count_connection_abuse_reporters(t.u(9102), now() - interval '7 days') = 0,
+  'unverified request and profile reports do not count toward automatic restriction');
 select t.as_user(t.u(9230));
 select public.report_connection_member(:'report_target', null, 'spam', 'First report');
 select public.report_connection_member(:'report_target', null, 'spam', 'Same member again');
 reset role;
 select t.ok((select trust_level = 'L1' from public.profiles where id = t.u(9102)), 'repeated reports from one member count once');
-select t.as_user(t.u(9231));
-select public.report_connection_member(:'report_target', null, 'spam', 'Second distinct reporter');
+select t.as_service();
+insert into public.reports (reporter_id, target_type, target_id, category, sla_due_at)
+values (t.u(9231), 'connection_request', t.u(9361), 'spam', now());
+reset role;
+select t.ok((select trust_level = 'Restricted' from public.profiles where id = t.u(9102)),
+  'a verified request recipient through the generic writer counts as the second reporter');
 select t.as_user(t.u(9232));
 select public.report_connection_member(:'report_target', null, 'spam', 'Third distinct reporter');
 reset role;

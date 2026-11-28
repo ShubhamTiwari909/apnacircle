@@ -27,50 +27,57 @@ begin
 end;
 $$;
 
-create or replace function app_private.record_connection_request_block()
-returns trigger language plpgsql security definer set search_path = '' as $$
+create function app_private.reconcile_blocked_connection(p_blocker uuid, p_blocked uuid)
+returns void language plpgsql set search_path = '' as $$
 declare
   v_connection uuid;
   v_requests uuid[];
 begin
-  if new.blocker_id = new.blocked_id then
-    raise sqlstate 'PT422' using message = 'Cannot block yourself';
-  end if;
-  perform app_private.lock_connection_request_members(new.blocker_id, new.blocked_id);
-  insert into app_private.connection_request_block_history (user_low, user_high)
-  values (least(new.blocker_id, new.blocked_id), greatest(new.blocker_id, new.blocked_id))
-  on conflict do nothing;
-
+  perform app_private.lock_connection_request_members(p_blocker, p_blocked);
   update public.connection_requests r set status = 'cancelled'
   where r.status = 'pending' and (r.sender_id, r.receiver_id) in (
-    (new.blocker_id, new.blocked_id), (new.blocked_id, new.blocker_id));
+    (p_blocker, p_blocked), (p_blocked, p_blocker));
   select array_agg(r.id) into v_requests from public.connection_requests r
-  where (r.sender_id, r.receiver_id) in ((new.blocker_id, new.blocked_id), (new.blocked_id, new.blocker_id));
+  where (r.sender_id, r.receiver_id) in ((p_blocker, p_blocked), (p_blocked, p_blocker));
   select c.id into v_connection from public.connections c
-  where c.user_low = least(new.blocker_id, new.blocked_id) and c.user_high = greatest(new.blocker_id, new.blocked_id);
+  where c.user_low = least(p_blocker, p_blocked) and c.user_high = greatest(p_blocker, p_blocked);
   if v_connection is not null then
-    perform app_private.end_member_connection(v_connection, new.blocker_id);
+    perform app_private.end_member_connection(v_connection, p_blocker);
   end if;
 
   -- Suppress relationship notices that would otherwise remain visible or await delivery.
-  delete from public.notifications n where n.recipient_id in (new.blocker_id, new.blocked_id)
+  delete from public.notifications n where n.recipient_id in (p_blocker, p_blocked)
     and (n.type = 'connection_request' and n.entity_id = any(v_requests)
       or n.type = 'connection_accepted' and n.entity_id = v_connection);
-  delete from public.notification_outbox o where o.status = 'pending' and o.recipient_id in (new.blocker_id, new.blocked_id)
+  delete from public.notification_outbox o where o.status = 'pending' and o.recipient_id in (p_blocker, p_blocked)
     and (o.payload->>'type' = 'connection_request' and o.payload->>'request_id' = any(v_requests::text[])
       or o.payload->>'type' = 'connection_accepted' and o.payload->>'connection_id' = v_connection::text);
+end;
+$$;
+
+create or replace function app_private.record_connection_request_block()
+returns trigger language plpgsql security definer set search_path = '' as $$
+begin
+  if new.blocker_id = new.blocked_id then
+    raise sqlstate 'PT422' using message = 'Cannot block yourself';
+  end if;
+  perform app_private.reconcile_blocked_connection(new.blocker_id, new.blocked_id);
+  insert into app_private.connection_request_block_history (user_low, user_high)
+  values (least(new.blocker_id, new.blocked_id), greatest(new.blocker_id, new.blocked_id))
+  on conflict do nothing;
   return new;
 end;
 $$;
 
--- Reconcile existing blocks created before connection removal was part of the block transaction.
+-- Process legacy pairs even when they have requests but no connection, and use the oldest
+-- block to attribute removal when both parties blocked each other.
 with pairs as (
-  select distinct on (c.id) c.id, b.blocker_id
-  from public.connection_blocks b join public.connections c
-    on c.user_low = least(b.blocker_id, b.blocked_id) and c.user_high = greatest(b.blocker_id, b.blocked_id)
-  order by c.id, b.created_at, b.blocker_id
+  select distinct on (least(b.blocker_id, b.blocked_id), greatest(b.blocker_id, b.blocked_id))
+    b.blocker_id, b.blocked_id
+  from public.connection_blocks b where b.blocker_id <> b.blocked_id
+  order by least(b.blocker_id, b.blocked_id), greatest(b.blocker_id, b.blocked_id), b.created_at, b.blocker_id
 )
-select app_private.end_member_connection(id, blocker_id) from pairs;
+select app_private.reconcile_blocked_connection(blocker_id, blocked_id) from pairs;
 
 create or replace function public.block_user(p_blocked_id uuid)
 returns void language plpgsql security definer set search_path = '' as $$
@@ -183,7 +190,8 @@ begin
 end;
 $$;
 
-revoke all on function app_private.end_member_connection(uuid, uuid) from public, anon, authenticated;
+revoke all on function app_private.end_member_connection(uuid, uuid),
+  app_private.reconcile_blocked_connection(uuid, uuid) from public, anon, authenticated;
 revoke all on function public.block_user(uuid), public.unblock_user(uuid), public.block_connection_member(text, uuid, uuid),
   public.remove_connection(uuid), public.list_my_connections(integer) from public, anon, authenticated;
 grant execute on function public.block_user(uuid), public.unblock_user(uuid), public.block_connection_member(text, uuid, uuid),

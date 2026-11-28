@@ -210,9 +210,9 @@ returns HTTP 429 with the next retry time. Daily limits reset at midnight IST.
 
 Outgoing request reads show pending until the original expiry for a silent decline.
 Cooldowns start at the decline, expiry, or cancellation event. Past blocks prevent
-new requests. Five declines or reports from two distinct members in seven days
-restrict the sender and open a moderation case. The case uses the existing moderator
-email queue. Staff can review the case and decide whether to lift the restriction.
+new requests. Five declines or reports from two distinct recipients in seven days
+restrict the sender and open a moderation case. Eligibility is verified against the
+original request. The case uses the existing moderator email queue.
 
 ### Request settings
 
@@ -227,7 +227,8 @@ Apply migration 019 before redeploying the web Worker and the `block` Edge Funct
 The Connections tab lists active connections and lets either party remove one.
 Blocking from People, a profile, or a request or connection record hides both members
 from each other, closes pending requests and active connections, and revokes shares.
-The block itself sends no notification to the other member.
+The block itself sends no notification to the other member. The migration also clears
+queued notices for existing blocked pairs.
 
 ### Contact sharing
 

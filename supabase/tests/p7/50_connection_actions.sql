@@ -102,4 +102,35 @@ select t.as_user(t.u(10200));
 select public.unblock_user(t.u(10201));
 select t.ok(public.get_member_profile(:'member_b') is not null, 'only the blocker can lift their own block');
 select t.throws($$select public.send_connection_request(t.u(10201), null)$$, 'PT409', 'lifting a block does not allow another request');
+reset role;
+
+-- Simulate blocks created before the trigger reconciled relationship notices.
+select t.make_member(n, 'Legacy block fixture ' || n) from generate_series(10205, 10208) n;
+insert into public.connections (id, user_low, user_high) values (t.u(10221), t.u(10207), t.u(10208));
+insert into public.contact_shares (connection_id, owner_id, kind, value)
+values (t.u(10221), t.u(10207), 'instagram', 'legacy-share');
+insert into public.connection_requests (id, sender_id, receiver_id) values
+  (t.u(10220), t.u(10205), t.u(10206)), (t.u(10222), t.u(10206), t.u(10207));
+insert into public.notifications (recipient_id, type, entity_id) values
+  (t.u(10206), 'connection_request', t.u(10220)), (t.u(10207), 'connection_accepted', t.u(10221)),
+  (t.u(10207), 'connection_request', t.u(10222));
+insert into public.notification_outbox (channel, recipient_id, payload, idempotency_key, status) values
+  ('email', t.u(10206), jsonb_build_object('type', 'connection_request', 'request_id', t.u(10220)), 'legacy-request', 'pending'),
+  ('push', t.u(10207), jsonb_build_object('type', 'connection_accepted', 'connection_id', t.u(10221)), 'legacy-accept', 'pending'),
+  ('email', t.u(10206), jsonb_build_object('type', 'connection_request', 'request_id', t.u(10220)), 'legacy-sent', 'sent'),
+  ('email', t.u(10207), jsonb_build_object('type', 'connection_request', 'request_id', t.u(10222)), 'legacy-unrelated', 'pending');
+alter table public.connection_blocks disable trigger record_connection_request_block;
+insert into public.connection_blocks (blocker_id, blocked_id) values
+  (t.u(10206), t.u(10205)), (t.u(10208), t.u(10207));
+alter table public.connection_blocks enable trigger record_connection_request_block;
+select app_private.reconcile_blocked_connection(blocker_id, blocked_id) from public.connection_blocks
+where blocker_id in (t.u(10206), t.u(10208));
+select t.ok((select status = 'cancelled' from public.connection_requests where id = t.u(10220))
+  and (select status = 'removed' and removed_by = t.u(10208) from public.connections where id = t.u(10221))
+  and (select revoked_at is not null from public.contact_shares where connection_id = t.u(10221))
+  and not exists (select 1 from public.notifications where entity_id in (t.u(10220), t.u(10221)))
+  and not exists (select 1 from public.notification_outbox where idempotency_key in ('legacy-request', 'legacy-accept'))
+  and (select count(*) = 2 from public.notification_outbox where idempotency_key in ('legacy-sent', 'legacy-unrelated'))
+  and exists (select 1 from public.notifications where entity_id = t.u(10222)),
+  'legacy reconciliation clears blocked pair notices even without a connection and preserves unrelated or sent outbox rows');
 rollback;

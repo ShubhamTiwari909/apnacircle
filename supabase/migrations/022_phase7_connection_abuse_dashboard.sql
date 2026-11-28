@@ -130,9 +130,7 @@ begin
     'recent', case when member.id is not null then jsonb_build_object(
       'sent', (select count(*) from public.connection_requests where sender_id = member.id and created_at > v_since),
       'declines', (select count(*) from public.connection_requests where sender_id = member.id and declined_at > v_since),
-      'reporters', (select count(distinct report.reporter_id) from app_private.trust_report_subjects related
-        join public.reports report on report.id = related.report_id where related.member_id = member.id
-          and report.reporter_id <> member.id and report.created_at > v_since and report.status <> 'dismissed')) end,
+      'reporters', app_private.count_connection_abuse_reporters(member.id, v_since)) end,
     'reviews', coalesce((select jsonb_agg(jsonb_build_object('decision', a.action, 'note', left(a.reason, 1000),
       'reviewerName', a.reviewer_name, 'createdAt', a.created_at) order by a.created_at desc, a.id desc) from (
         select m.id, m.action, m.reason, m.created_at, p.display_name as reviewer_name

@@ -21,6 +21,21 @@ create index connection_request_recent_reports on public.reports (created_at, re
   where reporter_id is not null and status <> 'dismissed';
 create index connection_request_report_subjects on app_private.trust_report_subjects (member_id, report_id);
 
+create table app_private.connection_abuse_eligible_reports (
+  report_id uuid primary key references app_private.trust_report_subjects(report_id) on delete cascade
+);
+alter table app_private.connection_abuse_eligible_reports enable row level security;
+
+create function app_private.count_connection_abuse_reporters(p_member uuid, p_since timestamptz)
+returns integer language sql stable set search_path = '' as $$
+  select count(distinct r.reporter_id)::integer
+  from app_private.trust_report_subjects subject
+  join app_private.connection_abuse_eligible_reports eligible using (report_id)
+  join public.reports r on r.id = subject.report_id
+  where subject.member_id = p_member and r.reporter_id <> p_member and r.created_at > p_since
+    and r.status <> 'dismissed'
+$$;
+
 -- Lock both member rows in a consistent order. This serializes the sender's limits as well as
 -- reciprocal requests, decisions and new blocks. NO KEY UPDATE remains compatible with FK checks.
 create function app_private.lock_connection_request_members(p_first uuid, p_second uuid)
@@ -92,11 +107,7 @@ begin
   v_since := clock_timestamp() - interval '168 hours';
   select count(*) into v_declines from public.connection_requests r
   where r.sender_id = p_member and r.declined_at > v_since;
-  select count(distinct r.reporter_id) into v_reporters
-  from app_private.trust_report_subjects subject
-  join public.reports r on r.id = subject.report_id
-  where subject.member_id = p_member and r.reporter_id <> p_member and r.created_at > v_since
-    and r.status <> 'dismissed';
+  v_reporters := app_private.count_connection_abuse_reporters(p_member, v_since);
   if v_declines < 5 and v_reporters < 2 then return; end if;
 
   update public.profiles set trust_level = 'Restricted', trust_sanction_only = false
@@ -114,22 +125,45 @@ begin
 end;
 $$;
 
--- Runs after track_trust_report_subject (triggers of the same kind run in name order).
-create function app_private.check_request_restriction_after_report()
-returns trigger language plpgsql security definer set search_path = '' as $$
+-- Only someone who received a request from the subject can contribute to the automatic
+-- threshold. Prove the relationship from the database, never from a submitted snapshot.
+create function app_private.register_connection_abuse_report(p_report_id uuid)
+returns void language plpgsql set search_path = '' as $$
 declare
   v_member uuid;
 begin
-  if new.reporter_id is null or new.status = 'dismissed' then return null; end if;
-  select member_id into v_member from app_private.trust_report_subjects where report_id = new.id;
-  if v_member is not null and v_member <> new.reporter_id then
+  select subject.member_id into v_member
+  from app_private.trust_report_subjects subject join public.reports r on r.id = subject.report_id
+  join public.profiles reporter on reporter.id = r.reporter_id and reporter.profile_status = 'active'
+  where subject.report_id = p_report_id and reporter.id <> subject.member_id
+    and r.status <> 'dismissed' and app_private.is_age_confirmed(reporter.id)
+    and exists (
+      select 1 from public.connection_requests request
+      where request.sender_id = subject.member_id and request.receiver_id = reporter.id
+        and (r.target_type = 'profile' or (r.target_type = 'connection_request' and request.id = r.target_id))
+    );
+  if not found then return; end if;
+
+  insert into app_private.connection_abuse_eligible_reports (report_id) values (p_report_id)
+  on conflict do nothing;
+  if found then
     perform app_private.apply_connection_request_restriction(v_member);
   end if;
+end;
+$$;
+
+-- This runs after track_trust_report_subject. The generic reports endpoint can contribute
+-- only for a verified request recipient. Profile reports use the authorized RPC below.
+create function app_private.check_request_restriction_after_report()
+returns trigger language plpgsql security definer set search_path = '' as $$
+begin
+  perform app_private.register_connection_abuse_report(new.id);
   return null;
 end;
 $$;
 create trigger verify_connection_request_report_threshold after insert on public.reports
-for each row execute function app_private.check_request_restriction_after_report();
+for each row when (new.target_type = 'connection_request' and new.reporter_id is not null)
+execute function app_private.check_request_restriction_after_report();
 
 create or replace function public.send_connection_request(p_receiver_id uuid, p_intro_message text)
 returns uuid language plpgsql security definer set search_path = '' as $$
@@ -349,6 +383,7 @@ returns uuid language plpgsql security definer set search_path = '' as $$
 declare
   v_reporter uuid := auth.uid();
   v_subject uuid;
+  v_report uuid;
 begin
   if v_reporter is null then raise sqlstate 'PT401' using message = 'Sign in required'; end if;
   if not app_private.is_age_confirmed(v_reporter)
@@ -363,8 +398,10 @@ begin
     select id into v_subject from public.profiles where public_id = p_public_id and app_private.can_view_member_profile(v_reporter, id);
   end if;
   if v_subject is null or v_subject = v_reporter then raise sqlstate 'PT409' using message = 'Report unavailable'; end if;
-  return public.submit_report(case when p_request_id is not null then 'connection_request' else 'profile' end,
+  v_report := public.submit_report(case when p_request_id is not null then 'connection_request' else 'profile' end,
     coalesce(p_request_id, v_subject), p_category, p_description);
+  if p_request_id is null then perform app_private.register_connection_abuse_report(v_report); end if;
+  return v_report;
 end;
 $$;
 
@@ -383,7 +420,8 @@ $$;
 
 revoke all on function app_private.lock_connection_request_members(uuid, uuid),
   app_private.record_connection_request_block(), app_private.track_connection_request_decision(),
-  app_private.apply_connection_request_restriction(uuid), app_private.check_request_restriction_after_report()
+  app_private.apply_connection_request_restriction(uuid), app_private.check_request_restriction_after_report(),
+  app_private.register_connection_abuse_report(uuid), app_private.count_connection_abuse_reporters(uuid, timestamptz)
   from public, anon, authenticated;
 revoke all on function public.send_connection_request(uuid, text), public.send_profile_connection_request(text),
   public.respond_connection_request(uuid, boolean), public.cancel_connection_request(uuid),
